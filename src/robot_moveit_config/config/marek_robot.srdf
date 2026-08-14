@@ -1,0 +1,160 @@
+<?xml version="1.0"?>
+
+<robot name="marek_robot">
+
+    <!-- ================================================= -->
+    <!-- MANIPULATOR -->
+    <!-- J1 ... J5 -->
+    <!-- ================================================= -->
+
+    <group name="manipulator">
+        <chain
+            base_link="base_link"
+            tip_link="tool0"
+        />
+    </group>
+
+
+    <!-- ================================================= -->
+    <!-- CHWYTAK -->
+    <!-- ================================================= -->
+
+    <group name="gripper">
+        <joint name="gripper_joint"/>
+    </group>
+
+
+    <!-- ================================================= -->
+    <!-- END EFFECTOR -->
+    <!-- ================================================= -->
+
+    <end_effector
+        name="robot_gripper"
+        parent_link="link_5"
+        group="gripper"
+        parent_group="manipulator"
+    />
+
+
+    <!-- ================================================= -->
+    <!-- POZYCJA STARTOWA -->
+    <!-- wartości po homingu -->
+    <!-- ================================================= -->
+
+    <group_state
+        name="home"
+        group="manipulator"
+    >
+
+        <joint
+            name="joint_1"
+            value="-0.3776"
+        />
+
+        <joint
+            name="joint_2"
+            value="0.3776"
+        />
+
+        <joint
+            name="joint_3"
+            value="0.3776"
+        />
+
+        <joint
+            name="joint_4"
+            value="3.14159"
+        />
+
+        <joint
+            name="joint_5"
+            value="1.5708"
+        />
+
+    </group_state>
+
+
+    <!-- ================================================= -->
+    <!-- PARY SĄSIEDNICH LINKÓW -->
+    <!-- ich kolizji nie sprawdzamy -->
+    <!-- ================================================= -->
+
+    <disable_collisions
+        link1="link_1"
+        link2="link_2"
+        reason="Adjacent"
+    />
+
+    <disable_collisions
+        link1="link_2"
+        link2="link_3"
+        reason="Adjacent"
+    />
+
+    <disable_collisions
+        link1="link_3"
+        link2="link_4"
+        reason="Adjacent"
+    />
+
+    <disable_collisions
+        link1="link_4"
+        link2="link_5"
+        reason="Adjacent"
+    />
+
+    <disable_collisions
+        link1="link_5"
+        link2="gripper_base"
+        reason="Adjacent"
+    />
+
+    <disable_collisions
+        link1="gripper_base"
+        link2="left_finger"
+        reason="Adjacent"
+    />
+
+    <disable_collisions
+        link1="gripper_base"
+        link2="right_finger"
+        reason="Adjacent"
+    />
+
+        <!-- ================================================= -->
+    <!-- TYMCZASOWO WYŁĄCZONE KOLIZJE -->
+    <!-- uproszczone bryły collision są zbyt duże -->
+    <!-- ================================================= -->
+
+    <disable_collisions
+        link1="gripper_base"
+        link2="link_2"
+        reason="Never"
+    />
+
+    <disable_collisions
+        link1="gripper_base"
+        link2="link_3"
+        reason="Never"
+    />
+
+    <disable_collisions
+        link1="link_2"
+        link2="link_4"
+        reason="Never"
+    />
+
+    <disable_collisions
+        link1="link_2"
+        link2="link_5"
+        reason="Never"
+    />
+
+    <disable_collisions
+        link1="link_3"
+        link2="link_5"
+        reason="Never"
+    />
+
+
+</robot>

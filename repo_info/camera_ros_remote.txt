@@ -1,0 +1,2 @@
+origin	https://github.com/christianrauch/camera_ros.git (fetch)
+origin	https://github.com/christianrauch/camera_ros.git (push)

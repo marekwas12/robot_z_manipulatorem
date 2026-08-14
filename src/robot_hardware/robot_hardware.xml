@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<library path="robot_hardware">
+  <class
+    name="robot_hardware/ArduinoSystem"
+    type="robot_hardware::ArduinoSystem"
+    base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Arduino Mega serial hardware interface for Marek robot
+    </description>
+  </class>
+</library>
