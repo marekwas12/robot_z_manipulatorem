@@ -1,616 +1,108 @@
 <?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="marek_robot_clean">
 
-<robot
-    xmlns:xacro="http://www.ros.org/wiki/xacro"
-    name="marek_robot"
->
+  <!-- ======================================================= -->
+  <!-- CZYSTY MODEL KINEMATYCZNY - 2026-08-17                 -->
+  <!--                                                        -->
+  <!-- Dane z fizycznych pomiarow:                            -->
+  <!-- J1->J2 = 155 mm                                        -->
+  <!-- J2->J3 = 295 mm                                        -->
+  <!-- J3->J4 = 150 mm + 10 mm offset wzdluz osi X           -->
+  <!-- J4->J5 = 115 mm                                        -->
+  <!-- J5->TCP = 140 mm                                       -->
+  <!--                                                        -->
+  <!-- Zera z pozycji fizycznie pionowej:                     -->
+  <!-- J2 = 1.502451582768484                                 -->
+  <!-- J3 = 2.2172394305143346                                -->
+  <!-- J4 = 1.6580627893946132                                -->
+  <!--                                                        -->
+  <!-- KRYTYCZNE:                                             -->
+  <!-- znak J1 zweryfikowany przez TF base_link->tool0.        -->
+  <!-- Model i FK uzywaja axis +Z / yaw = +q1.                -->
+  <!-- ======================================================= -->
 
-    <!-- ================================================= -->
-    <!-- PODSTAWA -->
-    <!-- ================================================= -->
+  <link name="base_link"/>
+  <link name="link_1"/>
+  <link name="link_2"/>
+  <link name="link_3"/>
+  <link name="link_4"/>
+  <link name="link_5"/>
+  <link name="tool0"/>
 
-    <link name="base_link"/>
+  <joint name="joint_1" type="revolute">
+    <parent link="base_link"/>
+    <child link="link_1"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-5.87425" upper="0.0" effort="100" velocity="1.0"/>
+  </joint>
 
+  <joint name="joint_2" type="revolute">
+    <parent link="link_1"/>
+    <child link="link_2"/>
+    <origin xyz="0 0 0.155" rpy="-1.502451582768484 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="0.0" upper="3.81371" effort="100" velocity="1.0"/>
+  </joint>
 
-    <!-- ================================================= -->
-    <!-- LINK 1 -->
-    <!-- Wymiary: 260 x 140 x 230 mm -->
-    <!-- J1 -> J2 = Z +159 mm -->
-    <!-- ================================================= -->
+  <joint name="joint_3" type="revolute">
+    <parent link="link_2"/>
+    <child link="link_3"/>
+    <origin xyz="0 0 0.295" rpy="-2.2172394305143346 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="0.0" upper="4.46884" effort="100" velocity="1.0"/>
+  </joint>
 
-    <link name="link_1">
+  <joint name="joint_4" type="revolute">
+    <parent link="link_3"/>
+    <child link="link_4"/>
+    <origin xyz="0.010 0 0.150" rpy="-1.6580627893946132 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="0.0872664626" upper="3.1415926536" effort="50" velocity="1.5"/>
+  </joint>
 
-        <collision>
-            <origin
-                xyz="0 0 0.0795"
-                rpy="0 0 0"
-            />
+  <joint name="joint_5" type="revolute">
+    <parent link="link_4"/>
+    <child link="link_5"/>
+    <origin xyz="0 0 0.115" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0.0" upper="3.1415926536" effort="30" velocity="2.0"/>
+  </joint>
 
-            <geometry>
-                <box size="0.260 0.140 0.230"/>
-            </geometry>
-        </collision>
+  <joint name="tool0_joint" type="fixed">
+    <parent link="link_5"/>
+    <child link="tool0"/>
+    <origin xyz="0 0 0.140" rpy="0 0 0"/>
+  </joint>
 
-    </link>
+  <!-- ROS2 CONTROL - ten sam fizyczny hardware co dotychczas -->
+  <ros2_control name="ManipulatorSystem" type="system">
+    <hardware>
+      <plugin>robot_hardware/ArduinoSystem</plugin>
+      <param name="serial_port">/dev/ttyUSB0</param>
+      <param name="baud_rate">115200</param>
+    </hardware>
 
-
-    <!-- ================================================= -->
-    <!-- JOINT 1 -->
-    <!-- obrót wokół Z -->
-    <!--
-        Silnik: 1.8 stopnia
-        Mikrokrok: 1/8
-        Przełożenie: 1:10.4
-
-        16640 kroków = 360 stopni
-
-        Twardy zakres:
-        0 ... -15557 kroków
-
-        Roboczy limit:
-        około -12816 kroków
-    -->
-    <!-- ================================================= -->
-
-    <joint name="joint_1" type="revolute">
-
-        <parent link="base_link"/>
-        <child link="link_1"/>
-
-        <origin
-            xyz="0 0 0"
-            rpy="0 0 0"
-        />
-
-        <axis xyz="0 0 1"/>
-
-        <limit
-            lower="-5.87425"
-            upper="0.0"
-            effort="100"
-            velocity="1.0"
-        />
-
+    <joint name="joint_1">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
     </joint>
-
-
-    <!-- ================================================= -->
-    <!-- LINK 2 -->
-    <!-- Wymiary: 100 x 140 x 480 mm -->
-    <!-- ================================================= -->
-
-    <link name="link_2">
-
-        <collision>
-            <origin
-                xyz="0 0 0.139645"
-                rpy="0 0 0"
-            />
-
-            <geometry>
-                <box size="0.100 0.140 0.480"/>
-            </geometry>
-        </collision>
-
-    </link>
-
-
-    <!-- ================================================= -->
-    <!-- JOINT 2 -->
-    <!-- J1 -> J2 = Z +159 mm -->
-    <!-- obrót wokół X -->
-    <!--
-        0 ... 10100 kroków
-        0 ... 3.81371 rad
-
-        Fizycznie J2 napędzają dwa silniki.
-        Dla ROS jest to jeden joint.
-    -->
-    <!-- ================================================= -->
-
-    <joint name="joint_2" type="revolute">
-
-        <parent link="link_1"/>
-        <child link="link_2"/>
-
-        <origin
-            xyz="0 0 0.159"
-            rpy="0 0 0"
-        />
-
-        <axis xyz="1 0 0"/>
-
-        <limit
-            lower="0.0"
-            upper="3.81371"
-            effort="100"
-            velocity="1.0"
-        />
-
+    <joint name="joint_2">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
     </joint>
-
-
-    <!-- ================================================= -->
-    <!-- LINK 3 -->
-    <!-- Wymiary: 90 x 70 x 320 mm -->
-    <!-- ================================================= -->
-
-    <link name="link_3">
-
-        <collision>
-
-            <!--
-                J3 -> J4:
-
-                X = +17.91 mm
-                Z = +149.39 mm
-
-                Środek:
-                X = +8.955 mm
-                Z = +74.695 mm
-            -->
-
-            <origin
-                xyz="0.008955 0 0.074695"
-                rpy="0 0.11932 0"
-            />
-
-            <geometry>
-                <box size="0.090 0.070 0.320"/>
-            </geometry>
-
-        </collision>
-
-    </link>
-
-
-    <!-- ================================================= -->
-    <!-- JOINT 3 -->
-    <!-- J2 -> J3 = Z +279.29 mm -->
-    <!-- obrót wokół X -->
-    <!--
-        0 ... 11835 kroków
-        0 ... 4.46884 rad
-    -->
-    <!-- ================================================= -->
-
-    <joint name="joint_3" type="revolute">
-
-        <parent link="link_2"/>
-        <child link="link_3"/>
-
-        <origin
-            xyz="0 0 0.27929"
-            rpy="0 0 0"
-        />
-
-        <axis xyz="1 0 0"/>
-
-        <limit
-            lower="0.0"
-            upper="4.46884"
-            effort="100"
-            velocity="1.0"
-        />
-
+    <joint name="joint_3">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
     </joint>
-
-
-    <!-- ================================================= -->
-    <!-- LINK 4 -->
-    <!-- Wymiary: 90 x 90 x 120 mm -->
-    <!-- ================================================= -->
-
-    <link name="link_4">
-
-        <collision>
-            <origin
-                xyz="0 0 0.055505"
-                rpy="0 0 0"
-            />
-
-            <geometry>
-                <box size="0.090 0.090 0.120"/>
-            </geometry>
-        </collision>
-
-    </link>
-
-
-    <!-- ================================================= -->
-    <!-- JOINT 4 -->
-    <!-- J3 -> J4 -->
-    <!-- X +17.91 mm -->
-    <!-- Z +149.39 mm -->
-    <!-- obrót wokół X -->
-    <!--
-        SERWO 3
-
-        zakres fizyczny:
-        5 ... 180 stopni
-
-        5 stopni   = 0.08727 rad
-        180 stopni = 3.14159 rad
-    -->
-    <!-- ================================================= -->
-
-    <joint name="joint_4" type="revolute">
-
-        <parent link="link_3"/>
-        <child link="link_4"/>
-
-        <origin
-            xyz="0.01791 0 0.14939"
-            rpy="0 0 0"
-        />
-
-        <axis xyz="1 0 0"/>
-
-        <limit
-            lower="0.08727"
-            upper="3.141592653589793"
-            effort="50"
-            velocity="1.5"
-        />
-
+    <joint name="joint_4">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
     </joint>
-
-
-    <!-- ================================================= -->
-    <!-- LINK 5 -->
-    <!-- Wymiary: 50 x 90 x 30 mm -->
-    <!-- ================================================= -->
-
-    <link name="link_5">
-
-        <collision>
-            <origin
-                xyz="0 0 0.015"
-                rpy="0 0 0"
-            />
-
-            <geometry>
-                <box size="0.050 0.090 0.030"/>
-            </geometry>
-        </collision>
-
-    </link>
-
-
-    <!-- ================================================= -->
-    <!-- JOINT 5 -->
-    <!-- J4 -> J5 = Z +111.01 mm -->
-    <!-- obrót wokół Z -->
-    <!--
-        SERWO 4
-
-        zakres:
-        0 ... 180 stopni
-        0 ... 3.14159 rad
-    -->
-    <!-- ================================================= -->
-
-    <joint name="joint_5" type="revolute">
-
-        <parent link="link_4"/>
-        <child link="link_5"/>
-
-        <origin
-            xyz="0 0 0.11101"
-            rpy="0 0 0"
-        />
-
-        <axis xyz="0 0 1"/>
-
-        <limit
-            lower="0.0"
-            upper="3.14159"
-            effort="30"
-            velocity="2.0"
-        />
-
+    <joint name="joint_5">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
     </joint>
-
-
-    <!-- ================================================= -->
-    <!-- PODSTAWA CHWYTAKA -->
-    <!-- J5 -> baza chwytaka = Z +21.56 mm -->
-    <!--
-        Uproszczona bryła kolizyjna chwytaka:
-
-        szerokość = 200 mm
-        grubość   = 50 mm
-        długość   = 180 mm
-    -->
-    <!-- ================================================= -->
-
-    <link name="gripper_base">
-
-        <collision>
-            <origin
-                xyz="0 -0.00675 0.09"
-                rpy="0 0 0"
-            />
-
-            <geometry>
-                <box size="0.200 0.050 0.180"/>
-            </geometry>
-        </collision>
-
-    </link>
-
-
-    <joint
-        name="gripper_base_joint"
-        type="fixed"
-    >
-
-        <parent link="link_5"/>
-        <child link="gripper_base"/>
-
-        <origin
-            xyz="0 0 0.02156"
-            rpy="0 0 0"
-        />
-
-    </joint>
-
-
-    <!-- ================================================= -->
-    <!-- LEWA SZCZĘKA -->
-    <!--
-        SERWO 5
-
-        zakres serwa:
-        45 ... 105 stopni
-
-        UWAGA:
-        kąt serwa nie jest bezpośrednio kątem
-        obrotu szczęki w URDF.
-    -->
-    <!-- ================================================= -->
-
-    <link name="left_finger"/>
-
-
-    <joint
-        name="gripper_joint"
-        type="revolute"
-    >
-
-        <parent link="gripper_base"/>
-        <child link="left_finger"/>
-
-        <!--
-            Względem J5:
-
-            X = +25.5 mm
-            Z = 48.75 mm
-
-            gripper_base:
-            Z = +21.56 mm
-
-            48.75 - 21.56 = 27.19 mm
-        -->
-
-        <origin
-            xyz="0.0255 0 0.02719"
-            rpy="0 0 0"
-        />
-
-        <axis xyz="0 1 0"/>
-
-        <!--
-            TYMCZASOWY zakres szczęki.
-            Później skalibrujemy:
-            kąt serwa -> kąt szczęki.
-        -->
-
-        <limit
-            lower="0.0"
-            upper="0.8"
-            effort="20"
-            velocity="1.0"
-        />
-
-    </joint>
-
-
-    <!-- ================================================= -->
-    <!-- PRAWA SZCZĘKA -->
-    <!-- porusza się przeciwnie do lewej -->
-    <!-- ================================================= -->
-
-    <link name="right_finger"/>
-
-
-    <joint
-        name="gripper_mimic_joint"
-        type="revolute"
-    >
-
-        <parent link="gripper_base"/>
-        <child link="right_finger"/>
-
-        <origin
-            xyz="-0.0255 0 0.02719"
-            rpy="0 0 0"
-        />
-
-        <axis xyz="0 1 0"/>
-
-        <limit
-            lower="-0.8"
-            upper="0.0"
-            effort="20"
-            velocity="1.0"
-        />
-
-        <mimic
-            joint="gripper_joint"
-            multiplier="-1"
-            offset="0"
-        />
-
-    </joint>
-
-
-    <!-- ================================================= -->
-    <!-- TOOL CENTER POINT -->
-    <!-- środek chwytu względem J5 -->
-    <!--
-        X = 0
-        Y = -6.75 mm
-        Z = 165.52 mm
-    -->
-    <!-- ================================================= -->
-
-    <link name="tool0"/>
-
-
-    <joint
-        name="tool0_joint"
-        type="fixed"
-    >
-
-        <parent link="link_5"/>
-        <child link="tool0"/>
-
-        <origin
-            xyz="0 -0.00675 0.16552"
-            rpy="0 0 0"
-        />
-
-    </joint>
-
-
-    <!-- ================================================= -->
-    <!-- ROS2 CONTROL -->
-    <!--
-        Na razie używamy FAKE / MOCK HARDWARE.
-
-        Dzięki temu możemy sprawdzić:
-        ROS2 -> controller -> jointy
-
-        bez ruszania prawdziwego robota.
-
-        Później GenericSystem zastąpimy interfejsem
-        komunikującym się z Arduino.
-    -->
-    <!-- ================================================= -->
-
-    <ros2_control
-        name="ManipulatorSystem"
-        type="system"
-    >
-
-        <!-- ============================================= -->
-        <!-- FAKE HARDWARE -->
-        <!-- ============================================= -->
-
-        <hardware>
-            <plugin>robot_hardware/ArduinoSystem</plugin>
-
-            <param name="serial_port">/dev/ttyUSB0</param>
-            <param name="baud_rate">115200</param>
-        </hardware>
-
-
-        <!-- ============================================= -->
-        <!-- JOINT 1 -->
-        <!--
-            Po homingu mieliśmy około -1000 kroków.
-
-            -1000 / 2648.34
-            około -0.3776 rad
-        -->
-        <!-- ============================================= -->
-
-        <joint name="joint_1">
-
-            <command_interface name="position"/>
-
-            <state_interface name="position">
-                <param name="initial_value">-0.3776</param>
-            </state_interface>
-
-        </joint>
-
-
-        <!-- ============================================= -->
-        <!-- JOINT 2 -->
-        <!--
-            Po homingu około +1000 kroków.
-        -->
-        <!-- ============================================= -->
-
-        <joint name="joint_2">
-
-            <command_interface name="position"/>
-
-            <state_interface name="position">
-                <param name="initial_value">0.3776</param>
-            </state_interface>
-
-        </joint>
-
-
-        <!-- ============================================= -->
-        <!-- JOINT 3 -->
-        <!--
-            Po homingu około +1000 kroków.
-        -->
-        <!-- ============================================= -->
-
-        <joint name="joint_3">
-
-            <command_interface name="position"/>
-
-            <state_interface name="position">
-                <param name="initial_value">0.3776</param>
-            </state_interface>
-
-        </joint>
-
-
-        <!-- ============================================= -->
-        <!-- JOINT 4 -->
-        <!-- SERWO 3 -->
-        <!-- start testowy = 180 stopni -->
-        <!-- ============================================= -->
-
-        <joint name="joint_4">
-
-            <command_interface name="position"/>
-
-            <state_interface name="position">
-                <param name="initial_value">3.14159</param>
-            </state_interface>
-
-        </joint>
-
-
-        <!-- ============================================= -->
-        <!-- JOINT 5 -->
-        <!-- SERWO 4 -->
-        <!-- start testowy = 90 stopni -->
-        <!-- ============================================= -->
-
-        <joint name="joint_5">
-
-            <command_interface name="position"/>
-
-            <state_interface name="position">
-                <param name="initial_value">1.5708</param>
-            </state_interface>
-
-        </joint>
-
-
-       
-
-
-    </ros2_control>
-
+  </ros2_control>
 
 </robot>

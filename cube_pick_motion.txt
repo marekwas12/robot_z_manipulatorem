@@ -1,0 +1,4498 @@
+
+============================================================
+FILE: src/robot_motion/robot_motion/ik_target_node.py
+============================================================
+import math
+
+import rclpy
+
+from rclpy.node import Node
+from rclpy.action import ActionClient
+
+from geometry_msgs.msg import Point
+
+from sensor_msgs.msg import JointState
+
+from moveit_msgs.srv import GetPositionIK
+from moveit_msgs.msg import RobotState
+
+from control_msgs.action import FollowJointTrajectory
+
+from trajectory_msgs.msg import (
+    JointTrajectory,
+    JointTrajectoryPoint,
+)
+
+
+# ============================================================
+# KONFIGURACJA
+# ============================================================
+
+BASE_FRAME = "base_link"
+
+TCP_LINK = "tool0"
+
+PLANNING_GROUP = "manipulator"
+
+IK_TOPIC = "/manipulator/ik_target"
+
+
+REQUIRED_JOINTS = [
+    "joint_1",
+    "joint_2",
+    "joint_3",
+    "joint_4",
+    "joint_5",
+]
+
+
+# ============================================================
+# LIMITY Z TWOJEGO URDF
+# ============================================================
+
+JOINT_LIMITS = {
+
+    "joint_1": (
+        -5.87425,
+        0.0,
+    ),
+
+    "joint_2": (
+        0.0,
+        3.81371,
+    ),
+
+    "joint_3": (
+        0.0,
+        4.46884,
+    ),
+
+    "joint_4": (
+        0.08727,
+        math.pi,
+    ),
+
+    "joint_5": (
+        0.0,
+        3.14159,
+    ),
+}
+
+
+# ============================================================
+# BEZPIECZEŃSTWO
+# ============================================================
+
+MAX_JOINT_DELTA = {
+
+    "joint_1": 1.0,
+
+    "joint_2": 1.0,
+
+    "joint_3": 1.0,
+
+    "joint_4": 1.2,
+
+    "joint_5": 0.25,
+}
+
+
+# Maksymalny ruch jednego polecenia XYZ.
+#
+# Telefon może zadać większą wartość,
+# ale na razie ograniczamy pojedynczy skok.
+
+MAX_CARTESIAN_DISTANCE_M = 0.15
+
+
+# ============================================================
+# IK
+# ============================================================
+
+IK_TIMEOUT_NS = 100_000_000
+
+
+class IKTargetNode(Node):
+
+    def __init__(
+        self,
+    ):
+
+        super().__init__(
+            "ik_target_node"
+        )
+
+
+        # ====================================================
+        # STAN
+        # ====================================================
+
+        self.current_joint_state = None
+
+        self.busy = False
+
+
+        # ====================================================
+        # JOINT STATES
+        # ====================================================
+
+        self.create_subscription(
+            JointState,
+            "/joint_states",
+            self.joint_state_callback,
+            10,
+        )
+
+
+        # ====================================================
+        # IK SERVICE
+        # ====================================================
+
+        self.ik_client = self.create_client(
+            GetPositionIK,
+            "/compute_ik",
+        )
+
+
+        # ====================================================
+        # CONTROLLER
+        # ====================================================
+
+        self.trajectory_client = ActionClient(
+            self,
+            FollowJointTrajectory,
+            "/arm_controller/follow_joint_trajectory",
+        )
+
+
+        # ====================================================
+        # CEL XYZ
+        # ====================================================
+
+        self.create_subscription(
+            Point,
+            IK_TOPIC,
+            self.target_callback,
+            10,
+        )
+
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        self.get_logger().info(
+            "IK TARGET NODE - MULTI SEED"
+        )
+
+        self.get_logger().info(
+            f"Nasluchuje: {IK_TOPIC}"
+        )
+
+        self.get_logger().info(
+            "Tryb IK: POSITION ONLY"
+        )
+
+        self.get_logger().info(
+            "Solver probuje kilka konfiguracji ramienia"
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+
+    # ========================================================
+    # JOINT STATES
+    # ========================================================
+
+    def joint_state_callback(
+        self,
+        msg,
+    ):
+
+        self.current_joint_state = msg
+
+
+    # ========================================================
+    # AKTUALNE JOINTY
+    # ========================================================
+
+    def get_current_joint_map(
+        self,
+    ):
+
+        if self.current_joint_state is None:
+
+            return None
+
+
+        result = {}
+
+
+        for name, position in zip(
+            self.current_joint_state.name,
+            self.current_joint_state.position,
+        ):
+
+            if name in REQUIRED_JOINTS:
+
+                result[name] = float(
+                    position
+                )
+
+
+        if len(result) != len(
+            REQUIRED_JOINTS
+        ):
+
+            return None
+
+
+        return result
+
+
+    # ========================================================
+    # OGRANICZANIE JOINTA DO URDF
+    # ========================================================
+
+    @staticmethod
+    def clamp_joint(
+        name,
+        value,
+    ):
+
+        lower, upper = (
+            JOINT_LIMITS[
+                name
+            ]
+        )
+
+
+        return max(
+            lower,
+            min(
+                upper,
+                value,
+            )
+        )
+
+
+    # ========================================================
+    # SEEDY IK
+    #
+    # Pierwszy = aktualna pozycja.
+    #
+    # Następne zmieniają głównie J2/J3/J4,
+    # żeby solver miał szansę znaleźć inną
+    # konfigurację "łokcia".
+    # ========================================================
+
+    def build_seeds(
+        self,
+        current,
+    ):
+
+        seeds = []
+
+
+        # ----------------------------------------------------
+        # 1. AKTUALNY STAN
+        # ----------------------------------------------------
+
+        seeds.append(
+            dict(
+                current
+            )
+        )
+
+
+        # ----------------------------------------------------
+        # 2. LEKKO INNA KONFIGURACJA
+        # ----------------------------------------------------
+
+        seed = dict(
+            current
+        )
+
+        seed["joint_2"] += 0.35
+        seed["joint_3"] -= 0.35
+
+        seeds.append(
+            seed
+        )
+
+
+        # ----------------------------------------------------
+        # 3. PRZECIWNA ZMIANA
+        # ----------------------------------------------------
+
+        seed = dict(
+            current
+        )
+
+        seed["joint_2"] -= 0.35
+        seed["joint_3"] += 0.35
+
+        seeds.append(
+            seed
+        )
+
+
+        # ----------------------------------------------------
+        # 4. WIĘKSZA ZMIANA ŁOKCIA
+        # ----------------------------------------------------
+
+        seed = dict(
+            current
+        )
+
+        seed["joint_2"] += 0.75
+        seed["joint_3"] -= 0.75
+
+        seeds.append(
+            seed
+        )
+
+
+        # ----------------------------------------------------
+        # 5. DRUGA STRONA
+        # ----------------------------------------------------
+
+        seed = dict(
+            current
+        )
+
+        seed["joint_2"] -= 0.75
+        seed["joint_3"] += 0.75
+
+        seeds.append(
+            seed
+        )
+
+
+        # ----------------------------------------------------
+        # 6. ŚRODEK ZAKRESÓW
+        # ----------------------------------------------------
+
+        seed = {
+
+            "joint_1":
+                current["joint_1"],
+
+            "joint_2":
+                (
+                    JOINT_LIMITS["joint_2"][0]
+                    +
+                    JOINT_LIMITS["joint_2"][1]
+                )
+                /
+                2.0,
+
+            "joint_3":
+                (
+                    JOINT_LIMITS["joint_3"][0]
+                    +
+                    JOINT_LIMITS["joint_3"][1]
+                )
+                /
+                2.0,
+
+            "joint_4":
+                (
+                    JOINT_LIMITS["joint_4"][0]
+                    +
+                    JOINT_LIMITS["joint_4"][1]
+                )
+                /
+                2.0,
+
+            "joint_5":
+                current["joint_5"],
+        }
+
+        seeds.append(
+            seed
+        )
+
+
+        # ----------------------------------------------------
+        # 7. J2 MAŁY / J3 DUŻY
+        # ----------------------------------------------------
+
+        seed = {
+
+            "joint_1":
+                current["joint_1"],
+
+            "joint_2":
+                0.5,
+
+            "joint_3":
+                3.5,
+
+            "joint_4":
+                1.8,
+
+            "joint_5":
+                current["joint_5"],
+        }
+
+        seeds.append(
+            seed
+        )
+
+
+        # ----------------------------------------------------
+        # 8. J2 DUŻY / J3 MAŁY
+        # ----------------------------------------------------
+
+        seed = {
+
+            "joint_1":
+                current["joint_1"],
+
+            "joint_2":
+                3.0,
+
+            "joint_3":
+                0.8,
+
+            "joint_4":
+                1.8,
+
+            "joint_5":
+                current["joint_5"],
+        }
+
+        seeds.append(
+            seed
+        )
+
+
+        # ----------------------------------------------------
+        # CLAMP WSZYSTKICH
+        # ----------------------------------------------------
+
+        for seed in seeds:
+
+            for joint in REQUIRED_JOINTS:
+
+                seed[joint] = (
+                    self.clamp_joint(
+                        joint,
+                        seed[joint],
+                    )
+                )
+
+
+        return seeds
+
+
+    # ========================================================
+    # CEL XYZ
+    # ========================================================
+
+    def target_callback(
+        self,
+        msg,
+    ):
+
+        if self.busy:
+
+            self.get_logger().warn(
+                "Robot wykonuje poprzedni ruch."
+            )
+
+            return
+
+
+        current = (
+            self.get_current_joint_map()
+        )
+
+
+        if current is None:
+
+            self.get_logger().error(
+                "Brak aktualnych /joint_states."
+            )
+
+            return
+
+
+        x = float(
+            msg.x
+        )
+
+        y = float(
+            msg.y
+        )
+
+        z = float(
+            msg.z
+        )
+
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        self.get_logger().info(
+            "NOWY CEL TCP"
+        )
+
+        self.get_logger().info(
+            f"X = {x:.4f} m"
+        )
+
+        self.get_logger().info(
+            f"Y = {y:.4f} m"
+        )
+
+        self.get_logger().info(
+            f"Z = {z:.4f} m"
+        )
+
+
+        # ====================================================
+        # GRANICE OGÓLNE WORKSPACE
+        #
+        # To nie oznacza, że każdy punkt w środku
+        # jest osiągalny.
+        # ====================================================
+
+        if (
+            abs(x) > 0.70
+            or
+            abs(y) > 0.70
+            or
+            z < -0.05
+            or
+            z > 0.80
+        ):
+
+            self.get_logger().error(
+                "Cel poza globalnym zakresem roboczym."
+            )
+
+            return
+
+
+        self.busy = True
+
+
+        self.solve_multi_seed(
+            x,
+            y,
+            z,
+            current,
+        )
+
+
+    # ========================================================
+    # REQUEST IK
+    # ========================================================
+
+    def make_ik_request(
+        self,
+        x,
+        y,
+        z,
+        seed_map,
+    ):
+
+        request = (
+            GetPositionIK.Request()
+        )
+
+
+        request.ik_request.group_name = (
+            PLANNING_GROUP
+        )
+
+
+        request.ik_request.ik_link_name = (
+            TCP_LINK
+        )
+
+
+        request.ik_request.avoid_collisions = (
+            True
+        )
+
+
+        request.ik_request.timeout.sec = 0
+
+
+        request.ik_request.timeout.nanosec = (
+            IK_TIMEOUT_NS
+        )
+
+
+        # ====================================================
+        # CEL POZYCJI
+        # ====================================================
+
+        pose = (
+            request
+            .ik_request
+            .pose_stamped
+        )
+
+
+        pose.header.frame_id = (
+            BASE_FRAME
+        )
+
+
+        pose.header.stamp = (
+            self.get_clock()
+            .now()
+            .to_msg()
+        )
+
+
+        pose.pose.position.x = x
+
+        pose.pose.position.y = y
+
+        pose.pose.position.z = z
+
+
+        # ====================================================
+        # POSITION ONLY IK
+        #
+        # kinematics.yaml ma:
+        #
+        # position_only_ik: true
+        #
+        # Quaternion pozostaje poprawny,
+        # ale orientacja nie jest naszym celem.
+        # ====================================================
+
+        pose.pose.orientation.x = 0.0
+
+        pose.pose.orientation.y = 0.0
+
+        pose.pose.orientation.z = 0.0
+
+        pose.pose.orientation.w = 1.0
+
+
+        # ====================================================
+        # SEED
+        # ====================================================
+
+        state = RobotState()
+
+
+        state.joint_state.name = list(
+            REQUIRED_JOINTS
+        )
+
+
+        state.joint_state.position = [
+
+            seed_map[
+                joint
+            ]
+
+            for joint
+            in REQUIRED_JOINTS
+        ]
+
+
+        state.joint_state.header.stamp = (
+            self.get_clock()
+            .now()
+            .to_msg()
+        )
+
+
+        request.ik_request.robot_state = (
+            state
+        )
+
+
+        return request
+
+
+    # ========================================================
+    # MULTI SEED IK
+    # ========================================================
+
+    def solve_multi_seed(
+        self,
+        x,
+        y,
+        z,
+        current,
+    ):
+
+        if not self.ik_client.service_is_ready():
+
+            self.get_logger().error(
+                "/compute_ik nie jest dostepne."
+            )
+
+            self.busy = False
+
+            return
+
+
+        seeds = (
+            self.build_seeds(
+                current
+            )
+        )
+
+
+        self.get_logger().info(
+            f"Probuje {len(seeds)} seedow IK..."
+        )
+
+
+        solutions = []
+
+
+        self.try_seed(
+            index=0,
+            seeds=seeds,
+            x=x,
+            y=y,
+            z=z,
+            current=current,
+            solutions=solutions,
+        )
+
+
+    # ========================================================
+    # REKURENCYJNE TESTOWANIE SEEDÓW
+    # ========================================================
+
+    def try_seed(
+        self,
+        index,
+        seeds,
+        x,
+        y,
+        z,
+        current,
+        solutions,
+    ):
+
+        if index >= len(
+            seeds
+        ):
+
+            self.finish_seed_search(
+                current,
+                solutions,
+            )
+
+            return
+
+
+        request = (
+            self.make_ik_request(
+                x,
+                y,
+                z,
+                seeds[index],
+            )
+        )
+
+
+        future = (
+            self.ik_client.call_async(
+                request
+            )
+        )
+
+
+        future.add_done_callback(
+
+            lambda future_result:
+
+                self.seed_result(
+                    future_result,
+                    index,
+                    seeds,
+                    x,
+                    y,
+                    z,
+                    current,
+                    solutions,
+                )
+        )
+
+
+    # ========================================================
+    # WYNIK JEDNEGO SEEDA
+    # ========================================================
+
+    def seed_result(
+        self,
+        future,
+        index,
+        seeds,
+        x,
+        y,
+        z,
+        current,
+        solutions,
+    ):
+
+        try:
+
+            response = (
+                future.result()
+            )
+
+
+        except Exception as exc:
+
+            self.get_logger().warn(
+                f"Seed {index + 1}: exception {exc}"
+            )
+
+            response = None
+
+
+        if (
+            response is not None
+            and
+            response.error_code.val == 1
+        ):
+
+            solution = {}
+
+
+            for name, position in zip(
+                response.solution.joint_state.name,
+                response.solution.joint_state.position,
+            ):
+
+                if name in REQUIRED_JOINTS:
+
+                    solution[name] = float(
+                        position
+                    )
+
+
+            if len(solution) == len(
+                REQUIRED_JOINTS
+            ):
+
+                score = (
+                    self.solution_score(
+                        current,
+                        solution,
+                    )
+                )
+
+
+                solutions.append(
+                    (
+                        score,
+                        solution,
+                        index,
+                    )
+                )
+
+
+                self.get_logger().info(
+                    f"Seed {index + 1}: IK OK "
+                    f"score={score:.4f}"
+                )
+
+
+        else:
+
+            code = None
+
+
+            if response is not None:
+
+                code = (
+                    response.error_code.val
+                )
+
+
+            self.get_logger().info(
+                f"Seed {index + 1}: brak IK "
+                f"code={code}"
+            )
+
+
+        self.try_seed(
+            index=index + 1,
+            seeds=seeds,
+            x=x,
+            y=y,
+            z=z,
+            current=current,
+            solutions=solutions,
+        )
+
+
+    # ========================================================
+    # SCORE
+    #
+    # Im mniejszy, tym lepiej.
+    #
+    # J5 ma większą karę,
+    # bo nie chcemy bez potrzeby kręcić chwytakiem.
+    # ========================================================
+
+    @staticmethod
+    def solution_score(
+        current,
+        solution,
+    ):
+
+        weights = {
+
+            "joint_1": 1.0,
+
+            "joint_2": 1.0,
+
+            "joint_3": 1.0,
+
+            "joint_4": 0.8,
+
+            "joint_5": 4.0,
+        }
+
+
+        score = 0.0
+
+
+        for joint in REQUIRED_JOINTS:
+
+            delta = abs(
+
+                solution[joint]
+                -
+                current[joint]
+            )
+
+
+            score += (
+                weights[joint]
+                *
+                delta
+            )
+
+
+        return score
+
+
+    # ========================================================
+    # WYBÓR NAJLEPSZEGO ROZWIĄZANIA
+    # ========================================================
+
+    def finish_seed_search(
+        self,
+        current,
+        solutions,
+    ):
+
+        if not solutions:
+
+            self.get_logger().error(
+                "IK ERROR: żaden seed nie znalazł rozwiązania."
+            )
+
+            self.busy = False
+
+            return
+
+
+        solutions.sort(
+            key=lambda item:
+                item[0]
+        )
+
+
+        score, solution, seed_index = (
+            solutions[0]
+        )
+
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            f"Wybrano seed {seed_index + 1}"
+        )
+
+
+        self.get_logger().info(
+            f"Score = {score:.4f}"
+        )
+
+
+        # ====================================================
+        # DELTY
+        # ====================================================
+
+        for joint in REQUIRED_JOINTS:
+
+            delta = (
+
+                solution[joint]
+                -
+                current[joint]
+            )
+
+
+            self.get_logger().info(
+
+                f"{joint}: "
+                f"{current[joint]:.4f} -> "
+                f"{solution[joint]:.4f} "
+                f"delta={delta:+.4f}"
+            )
+
+
+            if abs(delta) > (
+                MAX_JOINT_DELTA[
+                    joint
+                ]
+            ):
+
+                self.get_logger().error(
+
+                    f"STOP: {joint} wymaga "
+                    f"zbyt dużego skoku."
+                )
+
+                self.busy = False
+
+                return
+
+
+        self.send_trajectory(
+            current,
+            solution,
+        )
+
+
+    # ========================================================
+    # TRAJECTORY
+    # ========================================================
+
+    def send_trajectory(
+        self,
+        current,
+        target,
+    ):
+
+        if not (
+            self.trajectory_client
+            .server_is_ready()
+        ):
+
+            self.get_logger().error(
+                "Brak arm_controller."
+            )
+
+            self.busy = False
+
+            return
+
+
+        max_delta = max(
+
+            abs(
+                target[joint]
+                -
+                current[joint]
+            )
+
+            for joint
+            in REQUIRED_JOINTS
+        )
+
+
+        duration = max(
+
+            1.0,
+
+            min(
+
+                4.0,
+
+                1.0
+                +
+                max_delta
+                *
+                2.0
+            )
+        )
+
+
+        trajectory = (
+            JointTrajectory()
+        )
+
+
+        trajectory.joint_names = list(
+            REQUIRED_JOINTS
+        )
+
+
+        point = (
+            JointTrajectoryPoint()
+        )
+
+
+        point.positions = [
+
+            target[joint]
+
+            for joint
+            in REQUIRED_JOINTS
+        ]
+
+
+        seconds = int(
+            duration
+        )
+
+
+        nanoseconds = int(
+
+            (
+                duration
+                -
+                seconds
+            )
+            *
+            1e9
+        )
+
+
+        point.time_from_start.sec = (
+            seconds
+        )
+
+
+        point.time_from_start.nanosec = (
+            nanoseconds
+        )
+
+
+        trajectory.points = [
+            point
+        ]
+
+
+        goal = (
+            FollowJointTrajectory.Goal()
+        )
+
+
+        goal.trajectory = (
+            trajectory
+        )
+
+
+        self.get_logger().info(
+            ""
+        )
+
+
+        self.get_logger().info(
+
+            f"Wysylam trajectory: "
+            f"{duration:.2f} s"
+        )
+
+
+        future = (
+            self.trajectory_client
+            .send_goal_async(
+                goal
+            )
+        )
+
+
+        future.add_done_callback(
+            self.goal_response_callback
+        )
+
+
+    # ========================================================
+    # GOAL RESPONSE
+    # ========================================================
+
+    def goal_response_callback(
+        self,
+        future,
+    ):
+
+        try:
+
+            goal_handle = (
+                future.result()
+            )
+
+
+        except Exception as exc:
+
+            self.get_logger().error(
+                f"Trajectory exception: {exc}"
+            )
+
+            self.busy = False
+
+            return
+
+
+        if not goal_handle.accepted:
+
+            self.get_logger().error(
+                "Controller odrzucil trajectory."
+            )
+
+            self.busy = False
+
+            return
+
+
+        self.get_logger().info(
+            "Trajectory zaakceptowana."
+        )
+
+
+        future_result = (
+            goal_handle
+            .get_result_async()
+        )
+
+
+        future_result.add_done_callback(
+            self.trajectory_finished
+        )
+
+
+    # ========================================================
+    # KONIEC
+    # ========================================================
+
+    def trajectory_finished(
+        self,
+        future,
+    ):
+
+        try:
+
+            result = (
+                future.result()
+            )
+
+
+            self.get_logger().info(
+                "RUCH ZAKONCZONY"
+            )
+
+
+            self.get_logger().info(
+                f"status={result.status}"
+            )
+
+
+        except Exception as exc:
+
+            self.get_logger().error(
+                f"Trajectory result exception: {exc}"
+            )
+
+
+        self.busy = False
+
+
+def main(
+    args=None,
+):
+
+    rclpy.init(
+        args=args
+    )
+
+
+    node = (
+        IKTargetNode()
+    )
+
+
+    try:
+
+        rclpy.spin(
+            node
+        )
+
+
+    except KeyboardInterrupt:
+
+        pass
+
+
+    finally:
+
+        node.destroy_node()
+
+
+        if rclpy.ok():
+
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+
+    main()
+============================================================
+FILE: src/robot_motion/robot_motion/move_tcp.py
+============================================================
+import rclpy
+
+from geometry_msgs.msg import PoseStamped
+from moveit.planning import MoveItPy
+
+
+# =====================================================
+# CEL TCP
+#
+# Aktualna pozycja:
+# X = 0.017
+# Y = -0.024
+# Z = 0.326
+#
+# Pierwszy test:
+# +5 mm w Z
+# =====================================================
+
+TARGET_X = 0.017
+TARGET_Y = -0.024
+TARGET_Z = 0.331
+
+
+# =====================================================
+# AKTUALNA ORIENTACJA TOOL0
+#
+# Nie zmieniamy jej.
+# =====================================================
+
+QX = -0.524
+QY = 0.768
+QZ = 0.207
+QW = 0.304
+
+
+def main(args=None):
+
+    rclpy.init(args=args)
+
+    print("Uruchamiam MoveItPy TCP")
+
+    moveit = MoveItPy(
+        node_name="robot_motion_tcp"
+    )
+
+    manipulator = moveit.get_planning_component(
+        "manipulator"
+    )
+
+    print(
+        f"Planning group: "
+        f"{manipulator.planning_group_name}"
+    )
+
+
+    # =================================================
+    # START = AKTUALNY STAN FIZYCZNEGO ROBOTA
+    # =================================================
+
+    manipulator.set_start_state_to_current_state()
+
+
+    # =================================================
+    # CEL TCP
+    # =================================================
+
+    target_pose = PoseStamped()
+
+    target_pose.header.frame_id = "base_link"
+
+    target_pose.pose.position.x = TARGET_X
+    target_pose.pose.position.y = TARGET_Y
+    target_pose.pose.position.z = TARGET_Z
+
+    target_pose.pose.orientation.x = QX
+    target_pose.pose.orientation.y = QY
+    target_pose.pose.orientation.z = QZ
+    target_pose.pose.orientation.w = QW
+
+
+    print(
+        "Cel TCP:"
+    )
+
+    print(
+        f"X = {TARGET_X:.4f} m"
+    )
+
+    print(
+        f"Y = {TARGET_Y:.4f} m"
+    )
+
+    print(
+        f"Z = {TARGET_Z:.4f} m"
+    )
+
+
+    # =================================================
+    # CEL POSE DLA TOOL0
+    # =================================================
+
+    goal_ok = manipulator.set_goal_state(
+        pose_stamped_msg=target_pose,
+        pose_link="tool0",
+    )
+
+
+    if not goal_ok:
+
+        print(
+            "BLAD: MoveIt nie zaakceptowal celu TCP"
+        )
+
+        return
+
+
+    # =================================================
+    # PLAN
+    # =================================================
+
+    print(
+        "Planuje..."
+    )
+
+    plan_result = manipulator.plan()
+
+
+    if not plan_result:
+
+        print(
+            "PLANOWANIE NIEUDANE"
+        )
+
+        return
+
+
+    print(
+        "PLAN OK"
+    )
+
+
+    # =================================================
+    # EXECUTE
+    #
+    # MoveIt wysle FollowJointTrajectory do:
+    #
+    # /arm_controller/follow_joint_trajectory
+    #
+    # czyli do serial_trajectory_bridge.
+    # =================================================
+
+    print(
+        "Wykonuje trajektorie..."
+    )
+
+    status = moveit.execute(
+        plan_result.trajectory,
+        controllers=[]
+    )
+
+
+    print(
+        f"Wynik wykonania: {status}"
+    )
+
+
+if __name__ == "__main__":
+    main()
+============================================================
+FILE: src/robot_motion/robot_motion/move_tcp_auto.py
+============================================================
+import rclpy
+
+from rclpy.node import Node
+
+from geometry_msgs.msg import PoseStamped
+
+from moveit_msgs.srv import GetPositionIK
+
+from moveit.core.robot_state import RobotState
+from moveit.planning import MoveItPy
+
+
+# =====================================================
+# CEL TCP
+#
+# To jest ABSOLUTNA pozycja w base_link.
+#
+# Aktualnie sprawdzony punkt:
+# X = 0.017
+# Y = -0.024
+# Z = 0.331
+#
+# Na pierwszy test robimy +5 mm w Z:
+# Z = 0.336
+# =====================================================
+
+TARGET_X = 0.017
+TARGET_Y = -0.024
+TARGET_Z = 0.336
+
+
+# =====================================================
+# PARAMETRY
+# =====================================================
+
+PLANNING_GROUP = "manipulator"
+TCP_LINK = "tool0"
+BASE_FRAME = "base_link"
+
+IK_TIMEOUT_NS = 500_000_000
+
+
+REQUIRED_JOINTS = [
+    "joint_1",
+    "joint_2",
+    "joint_3",
+    "joint_4",
+    "joint_5",
+]
+
+
+class IKClient(Node):
+
+    def __init__(self):
+
+        super().__init__(
+            "move_tcp_auto_ik"
+        )
+
+        self.client = self.create_client(
+            GetPositionIK,
+            "/compute_ik"
+        )
+
+
+    def wait_for_service(self):
+
+        self.get_logger().info(
+            "Czekam na /compute_ik..."
+        )
+
+        while not self.client.wait_for_service(
+            timeout_sec=1.0
+        ):
+            self.get_logger().info(
+                "Nadal czekam na /compute_ik..."
+            )
+
+
+    def compute_ik(
+        self,
+        x,
+        y,
+        z,
+    ):
+
+        request = GetPositionIK.Request()
+
+        request.ik_request.group_name = (
+            PLANNING_GROUP
+        )
+
+        request.ik_request.ik_link_name = (
+            TCP_LINK
+        )
+
+        request.ik_request.avoid_collisions = True
+
+        request.ik_request.timeout.sec = 0
+        request.ik_request.timeout.nanosec = (
+            IK_TIMEOUT_NS
+        )
+
+
+        pose = PoseStamped()
+
+        pose.header.frame_id = BASE_FRAME
+
+        pose.pose.position.x = x
+        pose.pose.position.y = y
+        pose.pose.position.z = z
+
+
+        # position_only_ik:
+        # orientacja jest ignorowana przez KDL,
+        # ale quaternion musi byc poprawny.
+        pose.pose.orientation.x = 0.0
+        pose.pose.orientation.y = 0.0
+        pose.pose.orientation.z = 0.0
+        pose.pose.orientation.w = 1.0
+
+
+        request.ik_request.pose_stamped = pose
+
+
+        future = self.client.call_async(
+            request
+        )
+
+
+        rclpy.spin_until_future_complete(
+            self,
+            future,
+            timeout_sec=2.0
+        )
+
+
+        if not future.done():
+
+            self.get_logger().error(
+                "Timeout /compute_ik"
+            )
+
+            return None
+
+
+        response = future.result()
+
+
+        if response is None:
+
+            self.get_logger().error(
+                "Brak odpowiedzi z /compute_ik"
+            )
+
+            return None
+
+
+        # MoveItErrorCodes.SUCCESS == 1
+        if response.error_code.val != 1:
+
+            self.get_logger().error(
+                f"IK nieudane. "
+                f"error_code="
+                f"{response.error_code.val}"
+            )
+
+            return None
+
+
+        return response.solution
+
+
+def main(args=None):
+
+    rclpy.init(args=args)
+
+
+    # =================================================
+    # 1. IK
+    # =================================================
+
+    ik_node = IKClient()
+
+    ik_node.wait_for_service()
+
+
+    print()
+    print("=" * 60)
+
+    print(
+        "CEL TCP:"
+    )
+
+    print(
+        f"X = {TARGET_X:.4f} m"
+    )
+
+    print(
+        f"Y = {TARGET_Y:.4f} m"
+    )
+
+    print(
+        f"Z = {TARGET_Z:.4f} m"
+    )
+
+    print("=" * 60)
+
+
+    ik_solution = ik_node.compute_ik(
+        TARGET_X,
+        TARGET_Y,
+        TARGET_Z,
+    )
+
+
+    if ik_solution is None:
+
+        print(
+            "STOP: brak rozwiazania IK"
+        )
+
+        ik_node.destroy_node()
+
+        rclpy.shutdown()
+
+        return
+
+
+    print()
+    print("IK OK")
+
+
+    solution_map = {}
+
+
+    for name, position in zip(
+        ik_solution.joint_state.name,
+        ik_solution.joint_state.position,
+    ):
+
+        if name in REQUIRED_JOINTS:
+
+            solution_map[name] = position
+
+
+    if len(solution_map) != len(
+        REQUIRED_JOINTS
+    ):
+
+        print(
+            "BLAD: IK nie zwrocilo wszystkich "
+            "J1-J5"
+        )
+
+        print(
+            solution_map
+        )
+
+        ik_node.destroy_node()
+
+        rclpy.shutdown()
+
+        return
+
+
+    print()
+    print("Rozwiazanie IK:")
+
+
+    for joint in REQUIRED_JOINTS:
+
+        print(
+            f"{joint}: "
+            f"{solution_map[joint]:.6f}"
+        )
+
+
+    # IK node nie jest juz potrzebny.
+    ik_node.destroy_node()
+
+
+    # =================================================
+    # 2. MOVEITPY
+    # =================================================
+
+    print()
+    print(
+        "Uruchamiam MoveItPy..."
+    )
+
+
+    moveit = MoveItPy(
+        node_name="move_tcp_auto"
+    )
+
+
+    manipulator = (
+        moveit.get_planning_component(
+            PLANNING_GROUP
+        )
+    )
+
+
+    # =================================================
+    # 3. START = PRAWDZIWY AKTUALNY STAN
+    # =================================================
+
+    manipulator.set_start_state_to_current_state()
+
+
+    # =================================================
+    # 4. ROBOT STATE Z ROZWIAZANIA IK
+    # =================================================
+
+    robot_model = moveit.get_robot_model()
+
+    goal_state = RobotState(
+        robot_model
+    )
+
+
+    # Ustawiamy tylko J1-J5.
+    goal_state.joint_positions = (
+        solution_map
+    )
+
+
+    # Wazne po recznej zmianie jointow.
+    goal_state.update()
+
+
+    # =================================================
+    # 5. CEL JOINT-SPACE
+    # =================================================
+
+    goal_ok = manipulator.set_goal_state(
+        robot_state=goal_state
+    )
+
+
+    if not goal_ok:
+
+        print(
+            "STOP: MoveIt odrzucil "
+            "RobotState z IK"
+        )
+
+        return
+
+
+    # =================================================
+    # 6. PLANOWANIE
+    # =================================================
+
+    print()
+    print(
+        "Planuje joint-space..."
+    )
+
+
+    plan_result = (
+        manipulator.plan()
+    )
+
+
+    if not plan_result:
+
+        print(
+            "PLANOWANIE NIEUDANE"
+        )
+
+        return
+
+
+    print(
+        "PLAN OK"
+    )
+
+
+    # =================================================
+    # 7. EXECUTE
+    #
+    # Trajektoria pojdzie do:
+    #
+    # /arm_controller/follow_joint_trajectory
+    #
+    # czyli do serial_trajectory_bridge.
+    # =================================================
+
+    print()
+    print(
+        "Wykonuje..."
+    )
+
+
+    status = moveit.execute(
+        plan_result.trajectory,
+        controllers=[]
+    )
+
+
+    print()
+    print(
+        f"Wynik wykonania: {status}"
+    )
+
+
+if __name__ == "__main__":
+
+    main()
+
+============================================================
+FILE: src/robot_motion/robot_motion/move_tcp_relative.py
+============================================================
+import os
+import time
+
+import rclpy
+
+from rclpy.node import Node
+
+from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import JointState
+
+from moveit_msgs.srv import GetPositionIK
+from moveit_msgs.msg import RobotState as RobotStateMsg
+
+from moveit.core.robot_state import RobotState
+from moveit.planning import MoveItPy
+
+from tf2_ros import Buffer, TransformListener
+
+
+# =====================================================
+# KONFIGURACJA
+# =====================================================
+
+BASE_FRAME = "base_link"
+TCP_LINK = "tool0"
+
+PLANNING_GROUP = "manipulator"
+
+IK_TIMEOUT_NS = 500_000_000
+
+
+REQUIRED_JOINTS = [
+    "joint_1",
+    "joint_2",
+    "joint_3",
+    "joint_4",
+    "joint_5",
+]
+
+
+class TCPHelper(Node):
+
+    def __init__(self):
+
+        super().__init__(
+            "move_tcp_relative_helper"
+        )
+
+
+        # =================================================
+        # PARAMETRY RUCHU
+        # =================================================
+
+        self.declare_parameter(
+            "dx",
+            0.0
+        )
+
+        self.declare_parameter(
+            "dy",
+            0.0
+        )
+
+        self.declare_parameter(
+            "dz",
+            0.0
+        )
+
+
+        # =================================================
+        # TF
+        # =================================================
+
+        self.tf_buffer = Buffer()
+
+        self.tf_listener = TransformListener(
+            self.tf_buffer,
+            self,
+        )
+
+
+        # =================================================
+        # AKTUALNY JOINT STATE
+        #
+        # Uzyjemy go jako seed dla IK.
+        # =================================================
+
+        self.current_joint_state = None
+
+        self.joint_state_sub = self.create_subscription(
+            JointState,
+            "/joint_states",
+            self.joint_state_callback,
+            10,
+        )
+
+
+        # =================================================
+        # IK
+        # =================================================
+
+        self.ik_client = self.create_client(
+            GetPositionIK,
+            "/compute_ik"
+        )
+
+
+    # =====================================================
+    # CALLBACK /joint_states
+    # =====================================================
+
+    def joint_state_callback(
+        self,
+        msg,
+    ):
+
+        self.current_joint_state = msg
+
+
+    # =====================================================
+    # AKTUALNY TCP
+    # =====================================================
+
+    def get_current_tcp(self):
+
+        self.get_logger().info(
+            "Czekam na TF base_link -> tool0..."
+        )
+
+        deadline = (
+            time.monotonic() + 5.0
+        )
+
+        while (
+            rclpy.ok()
+            and
+            time.monotonic() < deadline
+        ):
+
+            rclpy.spin_once(
+                self,
+                timeout_sec=0.1
+            )
+
+            try:
+
+                transform = (
+                    self.tf_buffer.lookup_transform(
+                        BASE_FRAME,
+                        TCP_LINK,
+                        rclpy.time.Time(),
+                    )
+                )
+
+                x = (
+                    transform
+                    .transform
+                    .translation
+                    .x
+                )
+
+                y = (
+                    transform
+                    .transform
+                    .translation
+                    .y
+                )
+
+                z = (
+                    transform
+                    .transform
+                    .translation
+                    .z
+                )
+
+                return x, y, z
+
+            except Exception:
+
+                pass
+
+        return None
+
+
+    # =====================================================
+    # CZEKAJ NA AKTUALNY JOINT STATE
+    # =====================================================
+
+    def wait_for_joint_state(
+        self,
+        timeout_sec=2.0,
+    ):
+
+        deadline = (
+            time.monotonic()
+            +
+            timeout_sec
+        )
+
+        while (
+            rclpy.ok()
+            and
+            self.current_joint_state is None
+            and
+            time.monotonic() < deadline
+        ):
+
+            rclpy.spin_once(
+                self,
+                timeout_sec=0.05
+            )
+
+        return (
+            self.current_joint_state
+            is not None
+        )
+
+
+    # =====================================================
+    # IK
+    # =====================================================
+
+    def compute_ik(
+        self,
+        x,
+        y,
+        z,
+    ):
+
+        self.get_logger().info(
+            "Czekam na /compute_ik..."
+        )
+
+        while not self.ik_client.wait_for_service(
+            timeout_sec=1.0
+        ):
+
+            self.get_logger().info(
+                "Nadal czekam na /compute_ik..."
+            )
+
+
+        # =================================================
+        # MUSIMY MIEC AKTUALNY JOINT STATE
+        # =================================================
+
+        if not self.wait_for_joint_state(
+            timeout_sec=2.0
+        ):
+
+            self.get_logger().error(
+                "Brak /joint_states - "
+                "nie moge seedowac IK"
+            )
+
+            return None
+
+
+        request = GetPositionIK.Request()
+
+
+        request.ik_request.group_name = (
+            PLANNING_GROUP
+        )
+
+        request.ik_request.ik_link_name = (
+            TCP_LINK
+        )
+
+        request.ik_request.avoid_collisions = True
+
+
+        request.ik_request.timeout.sec = 0
+
+        request.ik_request.timeout.nanosec = (
+            IK_TIMEOUT_NS
+        )
+
+
+        # =================================================
+        # CEL TCP
+        # =================================================
+
+        pose = PoseStamped()
+
+        pose.header.frame_id = BASE_FRAME
+
+        pose.header.stamp = (
+            self.get_clock()
+            .now()
+            .to_msg()
+        )
+
+
+        pose.pose.position.x = x
+        pose.pose.position.y = y
+        pose.pose.position.z = z
+
+
+        # =================================================
+        # position_only_ik
+        #
+        # Orientacja nie jest wymuszana.
+        # Quaternion musi jednak byc poprawny.
+        # =================================================
+
+        pose.pose.orientation.x = 0.0
+        pose.pose.orientation.y = 0.0
+        pose.pose.orientation.z = 0.0
+        pose.pose.orientation.w = 1.0
+
+
+        request.ik_request.pose_stamped = pose
+
+
+        # =================================================
+        # SEED IK
+        #
+        # To jest najwazniejsza zmiana.
+        #
+        # Zamiast pozwolic KDL zaczynac z losowego/
+        # domyslnego stanu, podajemy AKTUALNY fizyczny
+        # stan robota.
+        # =================================================
+
+        seed_state = RobotStateMsg()
+
+        seed_state.joint_state.name = list(
+            self.current_joint_state.name
+        )
+
+        seed_state.joint_state.position = list(
+            self.current_joint_state.position
+        )
+
+        seed_state.joint_state.velocity = []
+
+        seed_state.joint_state.effort = []
+
+        seed_state.joint_state.header = (
+            self.current_joint_state.header
+        )
+
+
+        request.ik_request.robot_state = (
+            seed_state
+        )
+
+
+        # =================================================
+        # DEBUG SEED
+        # =================================================
+
+        self.get_logger().info(
+            "Seed IK z aktualnego /joint_states:"
+        )
+
+        for name, position in zip(
+            self.current_joint_state.name,
+            self.current_joint_state.position,
+        ):
+
+            if name in REQUIRED_JOINTS:
+
+                self.get_logger().info(
+                    f"  {name}: "
+                    f"{position:.6f}"
+                )
+
+
+        # =================================================
+        # WYSLANIE IK
+        # =================================================
+
+        future = self.ik_client.call_async(
+            request
+        )
+
+
+        rclpy.spin_until_future_complete(
+            self,
+            future,
+            timeout_sec=2.0
+        )
+
+
+        if not future.done():
+
+            self.get_logger().error(
+                "Timeout compute_ik"
+            )
+
+            return None
+
+
+        response = future.result()
+
+
+        if response is None:
+
+            self.get_logger().error(
+                "Brak odpowiedzi compute_ik"
+            )
+
+            return None
+
+
+        if response.error_code.val != 1:
+
+            self.get_logger().error(
+                f"IK ERROR: "
+                f"{response.error_code.val}"
+            )
+
+            return None
+
+
+        return response.solution
+
+
+def main(args=None):
+
+    rclpy.init(args=args)
+
+
+    helper = TCPHelper()
+
+
+    # =====================================================
+    # 1. PARAMETRY DX DY DZ
+    # =====================================================
+
+    dx = (
+        helper.get_parameter("dx")
+        .get_parameter_value()
+        .double_value
+    )
+
+    dy = (
+        helper.get_parameter("dy")
+        .get_parameter_value()
+        .double_value
+    )
+
+    dz = (
+        helper.get_parameter("dz")
+        .get_parameter_value()
+        .double_value
+    )
+
+
+    # =====================================================
+    # LIMIT BEZPIECZENSTWA OFFSETU
+    #
+    # Na tym etapie nie pozwalamy przypadkiem wpisac
+    # np. dx:=0.5.
+    #
+    # Maksymalnie 20 mm na jeden ruch.
+    # =====================================================
+
+    MAX_OFFSET = 0.020
+
+
+    if (
+        abs(dx) > MAX_OFFSET
+        or
+        abs(dy) > MAX_OFFSET
+        or
+        abs(dz) > MAX_OFFSET
+    ):
+
+        print(
+            "STOP: offset za duzy."
+        )
+
+        print(
+            "Maksymalnie +/- 0.020 m "
+            "na jedna os."
+        )
+
+        helper.destroy_node()
+
+        rclpy.shutdown()
+
+        return
+
+
+    # =====================================================
+    # 2. ODCZYT AKTUALNEGO TCP
+    # =====================================================
+
+    current = helper.get_current_tcp()
+
+
+    if current is None:
+
+        print(
+            "BLAD: nie moge odczytac "
+            "base_link -> tool0"
+        )
+
+        helper.destroy_node()
+
+        rclpy.shutdown()
+
+        return
+
+
+    current_x, current_y, current_z = current
+
+
+    print()
+    print("=" * 60)
+
+    print(
+        "AKTUALNY TCP:"
+    )
+
+    print(
+        f"X = {current_x:.6f}"
+    )
+
+    print(
+        f"Y = {current_y:.6f}"
+    )
+
+    print(
+        f"Z = {current_z:.6f}"
+    )
+
+
+    # =====================================================
+    # 3. NOWY CEL
+    # =====================================================
+
+    target_x = (
+        current_x + dx
+    )
+
+    target_y = (
+        current_y + dy
+    )
+
+    target_z = (
+        current_z + dz
+    )
+
+
+    print()
+    print(
+        "OFFSET:"
+    )
+
+    print(
+        f"DX = {dx:+.6f}"
+    )
+
+    print(
+        f"DY = {dy:+.6f}"
+    )
+
+    print(
+        f"DZ = {dz:+.6f}"
+    )
+
+
+    print()
+    print(
+        "CEL TCP:"
+    )
+
+    print(
+        f"X = {target_x:.6f}"
+    )
+
+    print(
+        f"Y = {target_y:.6f}"
+    )
+
+    print(
+        f"Z = {target_z:.6f}"
+    )
+
+    print("=" * 60)
+
+
+    # =====================================================
+    # 4. IK
+    # =====================================================
+
+    solution = helper.compute_ik(
+        target_x,
+        target_y,
+        target_z,
+    )
+
+
+    if solution is None:
+
+        print(
+            "STOP: brak rozwiazania IK"
+        )
+
+        helper.destroy_node()
+
+        rclpy.shutdown()
+
+        return
+
+
+    solution_map = {}
+
+
+    for name, position in zip(
+        solution.joint_state.name,
+        solution.joint_state.position,
+    ):
+
+        if name in REQUIRED_JOINTS:
+
+            solution_map[name] = position
+
+
+    if len(solution_map) != len(
+        REQUIRED_JOINTS
+    ):
+
+        print(
+            "STOP: IK nie zwrocilo "
+            "wszystkich J1-J5"
+        )
+
+        helper.destroy_node()
+
+        rclpy.shutdown()
+
+        return
+
+
+    print()
+    print(
+        "IK OK:"
+    )
+
+
+    for joint in REQUIRED_JOINTS:
+
+        print(
+            f"{joint}: "
+            f"{solution_map[joint]:.6f}"
+        )
+
+
+    # =====================================================
+    # 5. SPRAWDZENIE ROZNICY JOINTOW
+    #
+    # Dodatkowe zabezpieczenie:
+    # dla malego ruchu TCP nie chcemy nagle
+    # przestawic ktoregos jointa o ogromny kat.
+    # =====================================================
+
+    current_joint_map = {}
+
+
+    for name, position in zip(
+        helper.current_joint_state.name,
+        helper.current_joint_state.position,
+    ):
+
+        if name in REQUIRED_JOINTS:
+
+            current_joint_map[name] = position
+
+
+    MAX_JOINT_DELTA = 0.35
+
+
+    print()
+    print(
+        "ZMIANA JOINTOW:"
+    )
+
+
+    for joint in REQUIRED_JOINTS:
+
+        delta = (
+            solution_map[joint]
+            -
+            current_joint_map[joint]
+        )
+
+        print(
+            f"{joint}: "
+            f"{delta:+.6f} rad"
+        )
+
+
+        if abs(delta) > MAX_JOINT_DELTA:
+
+            print()
+            print(
+                "STOP: IK znalazlo zbyt odlegla "
+                "konfiguracje."
+            )
+
+            print(
+                f"{joint} zmienilby sie o "
+                f"{delta:+.6f} rad."
+            )
+
+            print(
+                "Robot NIE zostanie poruszony."
+            )
+
+            helper.destroy_node()
+
+            rclpy.shutdown()
+
+            return
+
+
+    # Helper nie jest juz potrzebny.
+    helper.destroy_node()
+
+
+    # =====================================================
+    # 6. MOVEIT
+    # =====================================================
+
+    print()
+    print(
+        "Uruchamiam MoveItPy..."
+    )
+
+
+    moveit = MoveItPy(
+        node_name="move_tcp_relative"
+    )
+
+
+    manipulator = (
+        moveit.get_planning_component(
+            PLANNING_GROUP
+        )
+    )
+
+
+    # =====================================================
+    # 7. START = AKTUALNY STAN
+    # =====================================================
+
+    manipulator.set_start_state_to_current_state()
+
+
+    # =====================================================
+    # 8. GOAL STATE Z IK
+    # =====================================================
+
+    robot_model = (
+        moveit.get_robot_model()
+    )
+
+
+    goal_state = RobotState(
+        robot_model
+    )
+
+
+    goal_state.joint_positions = (
+        solution_map
+    )
+
+
+    goal_state.update()
+
+
+    ok = manipulator.set_goal_state(
+        robot_state=goal_state
+    )
+
+
+    if not ok:
+
+        print(
+            "STOP: MoveIt odrzucil "
+            "goal state"
+        )
+
+        os._exit(1)
+
+
+    # =====================================================
+    # 9. PLAN
+    # =====================================================
+
+    print()
+    print(
+        "Planuje..."
+    )
+
+
+    plan_result = (
+        manipulator.plan()
+    )
+
+
+    if not plan_result:
+
+        print(
+            "PLANOWANIE NIEUDANE"
+        )
+
+        os._exit(1)
+
+
+    print(
+        "PLAN OK"
+    )
+
+
+    # =====================================================
+    # 10. EXECUTE
+    # =====================================================
+
+    print()
+    print(
+        "Wykonuje..."
+    )
+
+
+    status = moveit.execute(
+        plan_result.trajectory,
+        controllers=[]
+    )
+
+
+    print()
+    print(
+        f"Wynik: {status}"
+    )
+
+
+    # =====================================================
+    # WORKAROUND MOVEITPY JAZZY
+    # =====================================================
+
+    print()
+    print(
+        "Ruch zakonczony."
+    )
+
+    print(
+        "Koncze proces bez teardown MoveItPy."
+    )
+
+
+    os._exit(0)
+
+
+if __name__ == "__main__":
+
+    main()
+============================================================
+FILE: src/robot_motion/robot_motion/tcp_jog_node.py
+============================================================
+import math
+
+import rclpy
+
+from rclpy.node import Node
+from rclpy.time import Time
+
+from geometry_msgs.msg import Point
+
+from std_msgs.msg import String
+
+from tf2_ros import (
+    Buffer,
+    TransformListener,
+)
+
+
+# ============================================================
+# KONFIGURACJA
+# ============================================================
+
+BASE_FRAME = "base_link"
+TCP_LINK = "tool0"
+
+JOG_TOPIC = "/manipulator/tcp_jog"
+IK_TARGET_TOPIC = "/manipulator/ik_target"
+
+
+# ============================================================
+# BEZPIECZEŃSTWO
+# ============================================================
+
+# Maksymalny pojedynczy ruch liniowy.
+MAX_LINEAR_STEP_MM = 30.0
+
+# Nie pozwalamy na sterowanie tangencjalne bardzo blisko
+# osi J1, bo wtedy mały ruch liniowy wymaga ogromnego
+# obrotu podstawy.
+MIN_RADIUS_M = 0.020
+
+# Maksymalny obrót wynikający z pojedynczego ruchu
+# LEWO / PRAWO.
+MAX_ANGULAR_STEP_RAD = math.radians(12.0)
+
+
+# ============================================================
+# GLOBALNE GRANICE
+#
+# To tylko dodatkowe zabezpieczenie.
+# Nie oznacza, że każdy punkt wewnątrz jest osiągalny.
+# ============================================================
+
+MAX_XY_M = 0.70
+MIN_Z_M = -0.02
+MAX_Z_M = 0.75
+
+
+class TcpJogNode(Node):
+
+    def __init__(self):
+
+        super().__init__(
+            "tcp_jog_node"
+        )
+
+
+        # ====================================================
+        # TF
+        # ====================================================
+
+        self.tf_buffer = Buffer()
+
+        self.tf_listener = TransformListener(
+            self.tf_buffer,
+            self,
+        )
+
+
+        # ====================================================
+        # PUBLIKACJA CELU DLA IK
+        # ====================================================
+
+        self.ik_pub = self.create_publisher(
+            Point,
+            IK_TARGET_TOPIC,
+            10,
+        )
+
+
+        # ====================================================
+        # KOMENDY JOG
+        #
+        # Format:
+        #
+        # forward:10
+        # backward:10
+        # left:10
+        # right:10
+        # up:10
+        # down:10
+        #
+        # Wszystkie wartości są w mm.
+        # ====================================================
+
+        self.create_subscription(
+            String,
+            JOG_TOPIC,
+            self.jog_callback,
+            10,
+        )
+
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        self.get_logger().info(
+            "TCP JOG NODE"
+        )
+
+        self.get_logger().info(
+            f"Nasluchuje: {JOG_TOPIC}"
+        )
+
+        self.get_logger().info(
+            f"Publikuje: {IK_TARGET_TOPIC}"
+        )
+
+        self.get_logger().info(
+            "forward/backward = promien od podstawy"
+        )
+
+        self.get_logger().info(
+            "left/right = ruch po luku wokol J1"
+        )
+
+        self.get_logger().info(
+            "up/down = globalne Z"
+        )
+
+        self.get_logger().info(
+            "Wszystkie odleglosci w mm."
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+
+    # ========================================================
+    # AKTUALNE TCP
+    # ========================================================
+
+    def get_tcp(self):
+
+        try:
+
+            transform = (
+                self.tf_buffer.lookup_transform(
+                    BASE_FRAME,
+                    TCP_LINK,
+                    Time(),
+                )
+            )
+
+        except Exception as exc:
+
+            self.get_logger().error(
+                f"Brak TF {BASE_FRAME} -> {TCP_LINK}: "
+                f"{exc}"
+            )
+
+            return None
+
+
+        translation = (
+            transform.transform.translation
+        )
+
+
+        return (
+            float(translation.x),
+            float(translation.y),
+            float(translation.z),
+        )
+
+
+    # ========================================================
+    # PARSOWANIE KOMENDY
+    # ========================================================
+
+    def parse_command(
+        self,
+        text,
+    ):
+
+        text = (
+            text
+            .strip()
+            .lower()
+        )
+
+
+        if ":" not in text:
+
+            return None
+
+
+        command, value_text = (
+            text.split(
+                ":",
+                1,
+            )
+        )
+
+
+        command = (
+            command.strip()
+        )
+
+
+        try:
+
+            value_mm = float(
+                value_text
+                .strip()
+                .replace(",", ".")
+            )
+
+        except ValueError:
+
+            return None
+
+
+        if value_mm <= 0.0:
+
+            return None
+
+
+        if value_mm > MAX_LINEAR_STEP_MM:
+
+            self.get_logger().warn(
+                f"Ograniczam krok "
+                f"{value_mm:.1f} mm -> "
+                f"{MAX_LINEAR_STEP_MM:.1f} mm"
+            )
+
+            value_mm = (
+                MAX_LINEAR_STEP_MM
+            )
+
+
+        allowed = {
+            "forward",
+            "backward",
+            "left",
+            "right",
+            "up",
+            "down",
+        }
+
+
+        if command not in allowed:
+
+            return None
+
+
+        return (
+            command,
+            value_mm,
+        )
+
+
+    # ========================================================
+    # KOMENDA
+    # ========================================================
+
+    def jog_callback(
+        self,
+        msg,
+    ):
+
+        parsed = (
+            self.parse_command(
+                msg.data
+            )
+        )
+
+
+        if parsed is None:
+
+            self.get_logger().warn(
+                f"Niepoprawna komenda jog: "
+                f"{msg.data}"
+            )
+
+            return
+
+
+        command, value_mm = (
+            parsed
+        )
+
+
+        tcp = (
+            self.get_tcp()
+        )
+
+
+        if tcp is None:
+
+            return
+
+
+        x, y, z = tcp
+
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        self.get_logger().info(
+            f"JOG: {command} "
+            f"{value_mm:.1f} mm"
+        )
+
+        self.get_logger().info(
+            f"START: "
+            f"X={x * 1000:.1f} "
+            f"Y={y * 1000:.1f} "
+            f"Z={z * 1000:.1f} mm"
+        )
+
+
+        # ====================================================
+        # UKŁAD CYLINDRYCZNY
+        # ====================================================
+
+        radius = math.hypot(
+            x,
+            y,
+        )
+
+
+        angle = math.atan2(
+            y,
+            x,
+        )
+
+
+        step_m = (
+            value_mm
+            /
+            1000.0
+        )
+
+
+        # ====================================================
+        # DALEJ
+        # ====================================================
+
+        if command == "forward":
+
+            new_radius = (
+                radius
+                +
+                step_m
+            )
+
+
+            new_x = (
+                new_radius
+                *
+                math.cos(angle)
+            )
+
+
+            new_y = (
+                new_radius
+                *
+                math.sin(angle)
+            )
+
+
+            new_z = z
+
+
+        # ====================================================
+        # BLIŻEJ
+        # ====================================================
+
+        elif command == "backward":
+
+            new_radius = (
+                radius
+                -
+                step_m
+            )
+
+
+            if new_radius < MIN_RADIUS_M:
+
+                self.get_logger().error(
+                    "STOP: za blisko osi podstawy."
+                )
+
+                self.get_logger().error(
+                    f"Minimalny promien = "
+                    f"{MIN_RADIUS_M * 1000:.0f} mm"
+                )
+
+                return
+
+
+            new_x = (
+                new_radius
+                *
+                math.cos(angle)
+            )
+
+
+            new_y = (
+                new_radius
+                *
+                math.sin(angle)
+            )
+
+
+            new_z = z
+
+
+        # ====================================================
+        # LEWO / PRAWO
+        #
+        # value_mm oznacza długość łuku, NIE stopnie.
+        #
+        # theta = s / r
+        # ====================================================
+
+        elif command in (
+            "left",
+            "right",
+        ):
+
+            if radius < MIN_RADIUS_M:
+
+                self.get_logger().error(
+                    "STOP: TCP jest zbyt blisko osi J1 "
+                    "dla ruchu LEWO/PRAWO."
+                )
+
+                self.get_logger().error(
+                    f"Promien = "
+                    f"{radius * 1000:.1f} mm"
+                )
+
+                return
+
+
+            delta_angle = (
+                step_m
+                /
+                radius
+            )
+
+
+            delta_angle = min(
+                delta_angle,
+                MAX_ANGULAR_STEP_RAD,
+            )
+
+
+            if command == "left":
+
+                new_angle = (
+                    angle
+                    +
+                    delta_angle
+                )
+
+            else:
+
+                new_angle = (
+                    angle
+                    -
+                    delta_angle
+                )
+
+
+            new_x = (
+                radius
+                *
+                math.cos(
+                    new_angle
+                )
+            )
+
+
+            new_y = (
+                radius
+                *
+                math.sin(
+                    new_angle
+                )
+            )
+
+
+            new_z = z
+
+
+        # ====================================================
+        # GÓRA
+        # ====================================================
+
+        elif command == "up":
+
+            new_x = x
+
+            new_y = y
+
+            new_z = (
+                z
+                +
+                step_m
+            )
+
+
+        # ====================================================
+        # DÓŁ
+        # ====================================================
+
+        elif command == "down":
+
+            new_x = x
+
+            new_y = y
+
+            new_z = (
+                z
+                -
+                step_m
+            )
+
+
+        else:
+
+            return
+
+
+        # ====================================================
+        # GLOBALNE BEZPIECZEŃSTWO
+        # ====================================================
+
+        if (
+            abs(new_x) > MAX_XY_M
+            or
+            abs(new_y) > MAX_XY_M
+            or
+            new_z < MIN_Z_M
+            or
+            new_z > MAX_Z_M
+        ):
+
+            self.get_logger().error(
+                "STOP: nowy cel poza globalnym "
+                "zakresem bezpieczenstwa."
+            )
+
+            return
+
+
+        # ====================================================
+        # DEBUG
+        # ====================================================
+
+        dx = (
+            new_x
+            -
+            x
+        )
+
+        dy = (
+            new_y
+            -
+            y
+        )
+
+        dz = (
+            new_z
+            -
+            z
+        )
+
+
+        distance = math.sqrt(
+            dx * dx
+            +
+            dy * dy
+            +
+            dz * dz
+        )
+
+
+        self.get_logger().info(
+            f"CEL:   "
+            f"X={new_x * 1000:.1f} "
+            f"Y={new_y * 1000:.1f} "
+            f"Z={new_z * 1000:.1f} mm"
+        )
+
+
+        self.get_logger().info(
+            f"Ruch kartezjanski: "
+            f"{distance * 1000:.1f} mm"
+        )
+
+
+        self.get_logger().info(
+            f"R = {radius * 1000:.1f} mm"
+        )
+
+
+        # ====================================================
+        # PUBLIKACJA DO IK
+        # ====================================================
+
+        target = Point()
+
+        target.x = (
+            new_x
+        )
+
+        target.y = (
+            new_y
+        )
+
+        target.z = (
+            new_z
+        )
+
+
+        self.ik_pub.publish(
+            target
+        )
+
+
+        self.get_logger().info(
+            "Cel wyslany do IK."
+        )
+
+
+def main(
+    args=None,
+):
+
+    rclpy.init(
+        args=args
+    )
+
+
+    node = (
+        TcpJogNode()
+    )
+
+
+    try:
+
+        rclpy.spin(
+            node
+        )
+
+
+    except KeyboardInterrupt:
+
+        pass
+
+
+    finally:
+
+        node.destroy_node()
+
+
+        if rclpy.ok():
+
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+
+    main()
+
+============================================================
+FILE: src/robot_motion/robot_motion/preset_node.py
+============================================================
+import rclpy
+
+from rclpy.node import Node
+from rclpy.action import ActionClient
+
+from std_msgs.msg import String
+from sensor_msgs.msg import JointState
+
+from control_msgs.action import FollowJointTrajectory
+
+from trajectory_msgs.msg import (
+    JointTrajectory,
+    JointTrajectoryPoint,
+)
+
+
+# ============================================================
+# JOINTY
+# ============================================================
+
+JOINTS = [
+    "joint_1",
+    "joint_2",
+    "joint_3",
+    "joint_4",
+    "joint_5",
+]
+
+
+# ============================================================
+# PRESETY
+# ============================================================
+
+PRESETS = {
+
+    "pick": {
+        "joint_1": -3.880169003400086,
+        "joint_2": 3.4950218271186446,
+        "joint_3": 2.298422413750129,
+        "joint_4": 2.478367537831948,
+        "joint_5": 1.4311699866353502,
+    },
+
+    "ready": {
+        "joint_1": -3.880169003400086,
+        "joint_2": 1.6617967870731585,
+        "joint_3": 4.056883590164512,
+        "joint_4": 2.478367537831948,
+        "joint_5": 1.4311699866353502,
+    },
+}
+
+
+# ============================================================
+# TRAJEKTORIA
+# ============================================================
+
+TRAJECTORY_POINTS = 50
+
+MIN_DURATION = 4.0
+
+MAX_DURATION = 8.0
+
+
+class PresetNode(Node):
+
+    def __init__(self):
+
+        super().__init__(
+            "manipulator_preset_node"
+        )
+
+        self.current_positions = {}
+
+        self.busy = False
+
+
+        # ====================================================
+        # JOINT STATES
+        # ====================================================
+
+        self.create_subscription(
+            JointState,
+            "/joint_states",
+            self.joint_state_callback,
+            10,
+        )
+
+
+        # ====================================================
+        # PRESET COMMAND
+        # ====================================================
+
+        self.create_subscription(
+            String,
+            "/manipulator/preset",
+            self.preset_callback,
+            10,
+        )
+
+
+        # ====================================================
+        # TRAJECTORY CLIENT
+        # ====================================================
+
+        self.trajectory_client = ActionClient(
+            self,
+            FollowJointTrajectory,
+            "/arm_controller/follow_joint_trajectory",
+        )
+
+
+        self.get_logger().info(
+            "======================================"
+        )
+
+        self.get_logger().info(
+            "MANIPULATOR PRESET NODE - SMOOTH"
+        )
+
+        self.get_logger().info(
+            "Nasluchuje: /manipulator/preset"
+        )
+
+        self.get_logger().info(
+            "Presety: ready, pick"
+        )
+
+        self.get_logger().info(
+            f"Punkty trajektorii: {TRAJECTORY_POINTS}"
+        )
+
+        self.get_logger().info(
+            "Profil: quintic smoothstep"
+        )
+
+        self.get_logger().info(
+            "======================================"
+        )
+
+
+    # ========================================================
+    # JOINT STATES
+    # ========================================================
+
+    def joint_state_callback(
+        self,
+        msg,
+    ):
+
+        for name, position in zip(
+            msg.name,
+            msg.position,
+        ):
+
+            if name in JOINTS:
+
+                self.current_positions[name] = (
+                    float(position)
+                )
+
+
+    # ========================================================
+    # QUINTIC SMOOTHSTEP
+    #
+    # s(t) = 10t^3 - 15t^4 + 6t^5
+    #
+    # daje:
+    # - zerowa predkosc na poczatku
+    # - zerowa predkosc na koncu
+    # - zerowe przyspieszenie na poczatku
+    # - zerowe przyspieszenie na koncu
+    # ========================================================
+
+    @staticmethod
+    def smoothstep_quintic(
+        t,
+    ):
+
+        return (
+            10.0 * t**3
+            -
+            15.0 * t**4
+            +
+            6.0 * t**5
+        )
+
+
+    # ========================================================
+    # PRESET CALLBACK
+    # ========================================================
+
+    def preset_callback(
+        self,
+        msg,
+    ):
+
+        preset_name = (
+            msg.data
+            .strip()
+            .lower()
+        )
+
+
+        # ====================================================
+        # BUSY
+        # ====================================================
+
+        if self.busy:
+
+            self.get_logger().warn(
+                "Manipulator wykonuje juz ruch."
+            )
+
+            return
+
+
+        # ====================================================
+        # PRESET ISTNIEJE?
+        # ====================================================
+
+        if preset_name not in PRESETS:
+
+            self.get_logger().warn(
+                f"Nieznany preset: {preset_name}"
+            )
+
+            return
+
+
+        # ====================================================
+        # MAMY JOINT STATES?
+        # ====================================================
+
+        if len(
+            self.current_positions
+        ) != len(
+            JOINTS
+        ):
+
+            self.get_logger().error(
+                "Brak aktualnych /joint_states."
+            )
+
+            return
+
+
+        # ====================================================
+        # CONTROLLER GOTOWY?
+        # ====================================================
+
+        if not (
+            self.trajectory_client
+            .server_is_ready()
+        ):
+
+            self.get_logger().error(
+                "Brak kontrolera trajectory."
+            )
+
+            return
+
+
+        target = (
+            PRESETS[
+                preset_name
+            ]
+        )
+
+
+        # ====================================================
+        # START
+        # ====================================================
+
+        start = {
+
+            joint:
+                self.current_positions[
+                    joint
+                ]
+
+            for joint
+            in JOINTS
+        }
+
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "======================================"
+        )
+
+        self.get_logger().info(
+            f"PRESET: {preset_name.upper()}"
+        )
+
+
+        # ====================================================
+        # NAJWIEKSZA ZMIANA JOINTA
+        # ====================================================
+
+        max_delta = 0.0
+
+
+        for joint in JOINTS:
+
+            current = (
+                start[
+                    joint
+                ]
+            )
+
+            goal = (
+                target[
+                    joint
+                ]
+            )
+
+            delta = abs(
+                goal
+                -
+                current
+            )
+
+            max_delta = max(
+                max_delta,
+                delta,
+            )
+
+
+            self.get_logger().info(
+                f"{joint}: "
+                f"{current:.4f} -> "
+                f"{goal:.4f} "
+                f"delta={goal-current:+.4f}"
+            )
+
+
+        # ====================================================
+        # CZAS TRAJEKTORII
+        #
+        # Wiekszy ruch = wolniejszy przejazd.
+        # ====================================================
+
+        duration = (
+            3.0
+            +
+            max_delta
+            *
+            2.0
+        )
+
+
+        duration = max(
+            MIN_DURATION,
+            min(
+                MAX_DURATION,
+                duration,
+            ),
+        )
+
+
+        self.get_logger().info(
+            f"Czas ruchu: {duration:.2f} s"
+        )
+
+
+        # ====================================================
+        # TRAJEKTORIA
+        # ====================================================
+
+        trajectory = (
+            JointTrajectory()
+        )
+
+        trajectory.joint_names = list(
+            JOINTS
+        )
+
+
+        # ====================================================
+        # PUNKTY POSREDNIE
+        # ====================================================
+
+        for i in range(
+            1,
+            TRAJECTORY_POINTS + 1,
+        ):
+
+            t = (
+                i
+                /
+                TRAJECTORY_POINTS
+            )
+
+
+            s = (
+                self.smoothstep_quintic(
+                    t
+                )
+            )
+
+
+            point = (
+                JointTrajectoryPoint()
+            )
+
+
+            # ================================================
+            # POZYCJE
+            # ================================================
+
+            point.positions = [
+
+                start[joint]
+                +
+                s
+                *
+                (
+                    target[joint]
+                    -
+                    start[joint]
+                )
+
+                for joint
+                in JOINTS
+            ]
+
+
+            # ================================================
+            # CZAS
+            # ================================================
+
+            point_time = (
+                duration
+                *
+                t
+            )
+
+
+            seconds = int(
+                point_time
+            )
+
+
+            nanoseconds = int(
+                (
+                    point_time
+                    -
+                    seconds
+                )
+                *
+                1e9
+            )
+
+
+            point.time_from_start.sec = (
+                seconds
+            )
+
+            point.time_from_start.nanosec = (
+                nanoseconds
+            )
+
+
+            trajectory.points.append(
+                point
+            )
+
+
+        # ====================================================
+        # GOAL
+        # ====================================================
+
+        goal = (
+            FollowJointTrajectory.Goal()
+        )
+
+        goal.trajectory = (
+            trajectory
+        )
+
+
+        self.busy = True
+
+
+        self.get_logger().info(
+            f"Wysylam "
+            f"{len(trajectory.points)} "
+            f"punktow trajektorii..."
+        )
+
+
+        future = (
+            self.trajectory_client
+            .send_goal_async(
+                goal
+            )
+        )
+
+
+        future.add_done_callback(
+            self.goal_response_callback
+        )
+
+
+    # ========================================================
+    # GOAL RESPONSE
+    # ========================================================
+
+    def goal_response_callback(
+        self,
+        future,
+    ):
+
+        try:
+
+            goal_handle = (
+                future.result()
+            )
+
+        except Exception as exc:
+
+            self.get_logger().error(
+                f"Blad trajectory: {exc}"
+            )
+
+            self.busy = False
+
+            return
+
+
+        if not goal_handle.accepted:
+
+            self.get_logger().error(
+                "Trajectory odrzucona."
+            )
+
+            self.busy = False
+
+            return
+
+
+        self.get_logger().info(
+            "Trajectory zaakceptowana."
+        )
+
+
+        result_future = (
+            goal_handle
+            .get_result_async()
+        )
+
+
+        result_future.add_done_callback(
+            self.result_callback
+        )
+
+
+    # ========================================================
+    # RESULT
+    # ========================================================
+
+    def result_callback(
+        self,
+        future,
+    ):
+
+        try:
+
+            result = (
+                future.result()
+            )
+
+
+            self.get_logger().info(
+                f"Preset zakonczony. "
+                f"status={result.status}"
+            )
+
+
+        except Exception as exc:
+
+            self.get_logger().error(
+                f"Blad wyniku: {exc}"
+            )
+
+
+        self.busy = False
+
+
+def main(
+    args=None,
+):
+
+    rclpy.init(
+        args=args
+    )
+
+
+    node = (
+        PresetNode()
+    )
+
+
+    try:
+
+        rclpy.spin(
+            node
+        )
+
+
+    except KeyboardInterrupt:
+
+        pass
+
+
+    finally:
+
+        node.destroy_node()
+
+
+        if rclpy.ok():
+
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+
+    main()
+============================================================
+FILE: src/robot_motion/setup.py
+============================================================
+import os
+
+from glob import glob
+from setuptools import find_packages, setup
+
+
+package_name = 'robot_motion'
+
+
+setup(
+    name=package_name,
+    version='0.0.0',
+
+    packages=find_packages(
+        exclude=['test']
+    ),
+
+    data_files=[
+        (
+            'share/ament_index/resource_index/packages',
+            ['resource/' + package_name]
+        ),
+
+        (
+            'share/' + package_name,
+            ['package.xml']
+        ),
+
+        (
+            os.path.join(
+                'share',
+                package_name,
+                'launch'
+            ),
+            glob('launch/*.launch.py')
+        ),
+    ],
+
+    install_requires=[
+        'setuptools'
+    ],
+
+    zip_safe=True,
+
+    maintainer='marek',
+    maintainer_email='marek@todo.todo',
+
+    description='Robot motion control',
+
+    license='TODO',
+
+    entry_points={
+        'console_scripts': [
+            'move_joints = robot_motion.move_joints:main',
+            'serial_joint_bridge = robot_motion.serial_joint_bridge:main',
+            'serial_trajectory_bridge = robot_motion.serial_trajectory_bridge:main',
+            'move_tcp = robot_motion.move_tcp:main',
+            'test_tcp_directions = robot_motion.test_tcp_directions:main',
+            'test_tcp_ik = robot_motion.test_tcp_ik:main',
+            'move_tcp_auto = robot_motion.move_tcp_auto:main',
+            'move_tcp_relative = robot_motion.move_tcp_relative:main',
+            'tcp_jog = robot_motion.tcp_jog:main',
+            'tcp_keyboard = robot_motion.tcp_keyboard:main',
+            'ik_target_node = robot_motion.ik_target_node:main',
+            'workspace_scan = robot_motion.workspace_scan:main',
+            'tcp_jog_node = robot_motion.tcp_jog_node:main',
+            'manipulator_preset_node = robot_motion.preset_node:main',
+        ],
+    },
+)
+============================================================
+FILE: src/robot_motion/launch/move_tcp.launch.py
+============================================================
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+from moveit_configs_utils import MoveItConfigsBuilder
+from ament_index_python.packages import get_package_share_directory
+
+import os
+import yaml
+
+
+def load_yaml(package_name, relative_path):
+    package_path = get_package_share_directory(package_name)
+    full_path = os.path.join(package_path, relative_path)
+
+    with open(full_path, "r") as f:
+        return yaml.safe_load(f)
+
+
+def generate_launch_description():
+
+    robot_description_package = get_package_share_directory(
+        "robot_description"
+    )
+
+    robot_xacro = os.path.join(
+        robot_description_package,
+        "urdf",
+        "robot.urdf.xacro"
+    )
+
+
+    # =====================================================
+    # PODSTAWOWA KONFIGURACJA MOVEIT
+    # =====================================================
+
+    moveit_config = (
+        MoveItConfigsBuilder(
+            "marek_robot",
+            package_name="robot_moveit_config"
+        )
+
+        .robot_description(
+            file_path=robot_xacro
+        )
+
+        .robot_description_semantic(
+            file_path="config/marek_robot.srdf"
+        )
+
+        .robot_description_kinematics(
+            file_path="config/kinematics.yaml"
+        )
+
+        .joint_limits(
+            file_path="config/joint_limits.yaml"
+        )
+
+        .trajectory_execution(
+            file_path="config/moveit_controllers.yaml"
+        )
+
+        .to_moveit_configs()
+    )
+
+
+    # =====================================================
+    # KONFIGURACJA OMPL
+    # =====================================================
+
+    ompl_yaml = load_yaml(
+        "robot_moveit_config",
+        "config/ompl_planning.yaml"
+    )
+
+
+    # =====================================================
+    # PARAMETRY SPECYFICZNE DLA MOVEITPY
+    # =====================================================
+
+    moveit_py_parameters = {
+
+        # MoveItPy oczekuje pipeline_names
+        "planning_pipelines": {
+            "pipeline_names": [
+                "ompl"
+            ]
+        },
+
+        # Domyślne parametry planowania
+        "plan_request_params": {
+            "planning_attempts": 1,
+            "planning_pipeline": "ompl",
+            "planner_id": "RRTConnectkConfigDefault",
+            "max_velocity_scaling_factor": 0.5,
+            "max_acceleration_scaling_factor": 0.5,
+            "planning_time": 5.0,
+        },
+
+        # Opcje monitora sceny
+        "planning_scene_monitor_options": {
+            "name": "planning_scene_monitor",
+            "robot_description": "robot_description",
+            "joint_state_topic": "/joint_states",
+            "attached_collision_object_topic":
+                "/moveit_cpp/attached_collision_object",
+            "publish_planning_scene_topic":
+                "/moveit_cpp/publish_planning_scene",
+            "monitored_planning_scene_topic":
+                "/moveit_cpp/monitored_planning_scene",
+            "wait_for_initial_state_timeout": 10.0,
+        },
+
+        # Konfiguracja właściwego pipeline OMPL
+        "ompl": ompl_yaml,
+    }
+
+
+    # =====================================================
+    # MOVEIT PY NODE
+    # =====================================================
+
+    move_joints = Node(
+        package="robot_motion",
+        executable="move_tcp",
+        name="robot_motion",
+        output="screen",
+
+        parameters=[
+            moveit_config.to_dict(),
+            moveit_py_parameters,
+        ]
+    )
+
+
+    return LaunchDescription([
+        move_joints
+    ])
+============================================================
+FILE: src/robot_motion/launch/move_tcp_auto.launch.py
+============================================================
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+from moveit_configs_utils import MoveItConfigsBuilder
+from ament_index_python.packages import get_package_share_directory
+
+import os
+import yaml
+
+
+def load_yaml(package_name, relative_path):
+    package_path = get_package_share_directory(package_name)
+    full_path = os.path.join(package_path, relative_path)
+
+    with open(full_path, "r") as f:
+        return yaml.safe_load(f)
+
+
+def generate_launch_description():
+
+    robot_description_package = get_package_share_directory(
+        "robot_description"
+    )
+
+    robot_xacro = os.path.join(
+        robot_description_package,
+        "urdf",
+        "robot.urdf.xacro"
+    )
+
+
+    # =====================================================
+    # PODSTAWOWA KONFIGURACJA MOVEIT
+    # =====================================================
+
+    moveit_config = (
+        MoveItConfigsBuilder(
+            "marek_robot",
+            package_name="robot_moveit_config"
+        )
+
+        .robot_description(
+            file_path=robot_xacro
+        )
+
+        .robot_description_semantic(
+            file_path="config/marek_robot.srdf"
+        )
+
+        .robot_description_kinematics(
+            file_path="config/kinematics.yaml"
+        )
+
+        .joint_limits(
+            file_path="config/joint_limits.yaml"
+        )
+
+        .trajectory_execution(
+            file_path="config/moveit_controllers.yaml"
+        )
+
+        .to_moveit_configs()
+    )
+
+
+    # =====================================================
+    # KONFIGURACJA OMPL
+    # =====================================================
+
+    ompl_yaml = load_yaml(
+        "robot_moveit_config",
+        "config/ompl_planning.yaml"
+    )
+
+
+    # =====================================================
+    # PARAMETRY SPECYFICZNE DLA MOVEITPY
+    # =====================================================
+
+    moveit_py_parameters = {
+
+        # MoveItPy oczekuje pipeline_names
+        "planning_pipelines": {
+            "pipeline_names": [
+                "ompl"
+            ]
+        },
+
+        # Domyślne parametry planowania
+        "plan_request_params": {
+            "planning_attempts": 1,
+            "planning_pipeline": "ompl",
+            "planner_id": "RRTConnectkConfigDefault",
+            "max_velocity_scaling_factor": 0.5,
+            "max_acceleration_scaling_factor": 0.5,
+            "planning_time": 5.0,
+        },
+
+        # Opcje monitora sceny
+        "planning_scene_monitor_options": {
+            "name": "planning_scene_monitor",
+            "robot_description": "robot_description",
+            "joint_state_topic": "/joint_states",
+            "attached_collision_object_topic":
+                "/moveit_cpp/attached_collision_object",
+            "publish_planning_scene_topic":
+                "/moveit_cpp/publish_planning_scene",
+            "monitored_planning_scene_topic":
+                "/moveit_cpp/monitored_planning_scene",
+            "wait_for_initial_state_timeout": 10.0,
+        },
+
+        # Konfiguracja właściwego pipeline OMPL
+        "ompl": ompl_yaml,
+    }
+
+
+    # =====================================================
+    # MOVEIT PY NODE
+    # =====================================================
+
+    move_joints = Node(
+        package="robot_motion",
+        executable="move_tcp_auto",
+        name="robot_motion",
+        output="screen",
+
+        parameters=[
+            moveit_config.to_dict(),
+            moveit_py_parameters,
+        ]
+    )
+
+
+    return LaunchDescription([
+        move_joints
+    ])

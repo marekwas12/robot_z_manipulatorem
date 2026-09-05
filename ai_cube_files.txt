@@ -1,0 +1,6508 @@
+
+============================================================
+FILE: src/camera_bridge/camera_bridge/ai_cube_detector.py
+============================================================
+import json
+import math
+import os
+
+import cv2
+import numpy as np
+import onnxruntime as ort
+
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+
+from sensor_msgs.msg import Image, CompressedImage
+from geometry_msgs.msg import PointStamped
+from std_msgs.msg import Bool, String, Float32
+
+import message_filters
+import tf2_ros
+
+
+# ============================================================
+# MODEL
+# ============================================================
+
+MODEL_PATH = (
+    "/home/marek/robot_ws/models/cube70mmv3.onnx"
+)
+
+MODEL_SIZE = 640
+
+CLASS_NAME = "cube_70mm"
+CLASS_ID = 0
+
+CONF_THRESHOLD = 0.50
+NMS_THRESHOLD = 0.45
+
+MASK_THRESHOLD = 0.50
+
+
+# ============================================================
+# ROS INPUT
+# ============================================================
+
+IMAGE_TOPIC = (
+    "/stereo/left_rectified"
+)
+
+POINTS_TOPIC = (
+    "/stereo/points"
+)
+
+
+# ============================================================
+# ROS OUTPUT
+# ============================================================
+
+DETECTED_TOPIC = (
+    "/ai_cube/detected"
+)
+
+CONFIDENCE_TOPIC = (
+    "/ai_cube/confidence"
+)
+
+CAMERA_POINT_TOPIC = (
+    "/ai_cube/position_camera"
+)
+
+BASE_POINT_TOPIC = (
+    "/ai_cube/position_base"
+)
+
+INFO_TOPIC = (
+    "/ai_cube/info"
+)
+
+DEBUG_TOPIC = (
+    "/ai_cube/debug/compressed"
+)
+
+
+# ============================================================
+# TF
+# ============================================================
+
+CAMERA_FRAME = "stereo_camera_optical"
+BASE_FRAME = "base_link"
+
+
+# ============================================================
+# DEPTH FILTERING
+# ============================================================
+
+MIN_DEPTH_M = 0.10
+MAX_DEPTH_M = 2.00
+
+MIN_VALID_3D_POINTS = 20
+
+DEPTH_PERCENTILE_LOW = 10
+DEPTH_PERCENTILE_HIGH = 90
+
+
+class AICubeDetector(Node):
+
+    def __init__(self):
+
+        super().__init__(
+            "ai_cube_detector"
+        )
+
+        # ====================================================
+        # ONNX
+        # ====================================================
+
+        if not os.path.exists(
+            MODEL_PATH
+        ):
+
+            raise RuntimeError(
+                f"Brak modelu: {MODEL_PATH}"
+            )
+
+        self.get_logger().info(
+            f"Laduje model: {MODEL_PATH}"
+        )
+
+        self.session = ort.InferenceSession(
+            MODEL_PATH,
+            providers=[
+                "CPUExecutionProvider"
+            ],
+        )
+
+        self.input_name = (
+            self.session
+            .get_inputs()[0]
+            .name
+        )
+
+        outputs = (
+            self.session
+            .get_outputs()
+        )
+
+        self.output_detection_name = (
+            outputs[0].name
+        )
+
+        self.output_proto_name = (
+            outputs[1].name
+        )
+
+        # ====================================================
+        # TF
+        # ====================================================
+
+        self.tf_buffer = (
+            tf2_ros.Buffer()
+        )
+
+        self.tf_listener = (
+            tf2_ros.TransformListener(
+                self.tf_buffer,
+                self,
+            )
+        )
+
+        # ====================================================
+        # PUBLISHERS
+        # ====================================================
+
+        self.detected_pub = (
+            self.create_publisher(
+                Bool,
+                DETECTED_TOPIC,
+                10,
+            )
+        )
+
+        self.confidence_pub = (
+            self.create_publisher(
+                Float32,
+                CONFIDENCE_TOPIC,
+                10,
+            )
+        )
+
+        self.camera_point_pub = (
+            self.create_publisher(
+                PointStamped,
+                CAMERA_POINT_TOPIC,
+                10,
+            )
+        )
+
+        self.base_point_pub = (
+            self.create_publisher(
+                PointStamped,
+                BASE_POINT_TOPIC,
+                10,
+            )
+        )
+
+        self.info_pub = (
+            self.create_publisher(
+                String,
+                INFO_TOPIC,
+                10,
+            )
+        )
+
+        self.debug_pub = (
+            self.create_publisher(
+                CompressedImage,
+                DEBUG_TOPIC,
+                5,
+            )
+        )
+
+        # ====================================================
+        # SUBSCRIBERS
+        # ====================================================
+
+        self.image_sub = (
+            message_filters.Subscriber(
+                self,
+                Image,
+                IMAGE_TOPIC,
+                qos_profile=
+                    qos_profile_sensor_data,
+            )
+        )
+
+        self.points_sub = (
+            message_filters.Subscriber(
+                self,
+                Image,
+                POINTS_TOPIC,
+                qos_profile=
+                    qos_profile_sensor_data,
+            )
+        )
+
+        self.sync = (
+            message_filters
+            .ApproximateTimeSynchronizer(
+                [
+                    self.image_sub,
+                    self.points_sub,
+                ],
+                queue_size=10,
+                slop=0.08,
+            )
+        )
+
+        self.sync.registerCallback(
+            self.callback
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        self.get_logger().info(
+            "AI CUBE DETECTOR"
+        )
+
+        self.get_logger().info(
+            f"Model: cube70mmv3.onnx"
+        )
+
+        self.get_logger().info(
+            f"Klasa: {CLASS_NAME}"
+        )
+
+        self.get_logger().info(
+            f"Confidence >= {CONF_THRESHOLD:.2f}"
+        )
+
+        self.get_logger().info(
+            f"Input: {IMAGE_TOPIC}"
+        )
+
+        self.get_logger().info(
+            f"XYZ: {POINTS_TOPIC}"
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+
+    # ========================================================
+    # ROS IMAGE
+    # ========================================================
+
+    def ros_bgr(
+        self,
+        msg,
+    ):
+
+        if msg.encoding != "bgr8":
+
+            raise RuntimeError(
+                f"Expected bgr8, "
+                f"got {msg.encoding}"
+            )
+
+        raw = np.frombuffer(
+            msg.data,
+            dtype=np.uint8,
+        )
+
+        expected = (
+            msg.height
+            *
+            msg.step
+        )
+
+        if raw.size < expected:
+
+            raise RuntimeError(
+                "Za malo danych obrazu."
+            )
+
+        rows = raw[
+            :expected
+        ].reshape(
+            msg.height,
+            msg.step,
+        )
+
+        row_bytes = (
+            msg.width
+            *
+            3
+        )
+
+        image = rows[
+            :,
+            :row_bytes
+        ].reshape(
+            msg.height,
+            msg.width,
+            3,
+        )
+
+        return np.ascontiguousarray(
+            image
+        )
+
+
+    def ros_xyz(
+        self,
+        msg,
+    ):
+
+        if msg.encoding != "32FC3":
+
+            raise RuntimeError(
+                f"Expected 32FC3, "
+                f"got {msg.encoding}"
+            )
+
+        raw = np.frombuffer(
+            msg.data,
+            dtype=np.float32,
+        )
+
+        expected = (
+            msg.height
+            *
+            msg.width
+            *
+            3
+        )
+
+        if raw.size < expected:
+
+            raise RuntimeError(
+                "Za malo danych XYZ."
+            )
+
+        xyz = raw[
+            :expected
+        ].reshape(
+            msg.height,
+            msg.width,
+            3,
+        )
+
+        return np.ascontiguousarray(
+            xyz
+        )
+
+
+    # ========================================================
+    # LETTERBOX
+    # ========================================================
+
+    def letterbox(
+        self,
+        image,
+    ):
+
+        original_h, original_w = (
+            image.shape[:2]
+        )
+
+        scale = min(
+            MODEL_SIZE / original_w,
+            MODEL_SIZE / original_h,
+        )
+
+        new_w = int(
+            round(
+                original_w
+                *
+                scale
+            )
+        )
+
+        new_h = int(
+            round(
+                original_h
+                *
+                scale
+            )
+        )
+
+        resized = cv2.resize(
+            image,
+            (
+                new_w,
+                new_h,
+            ),
+            interpolation=
+                cv2.INTER_LINEAR,
+        )
+
+        pad_w = (
+            MODEL_SIZE
+            -
+            new_w
+        )
+
+        pad_h = (
+            MODEL_SIZE
+            -
+            new_h
+        )
+
+        left = (
+            pad_w // 2
+        )
+
+        right = (
+            pad_w
+            -
+            left
+        )
+
+        top = (
+            pad_h // 2
+        )
+
+        bottom = (
+            pad_h
+            -
+            top
+        )
+
+        padded = cv2.copyMakeBorder(
+            resized,
+            top,
+            bottom,
+            left,
+            right,
+            cv2.BORDER_CONSTANT,
+            value=(
+                114,
+                114,
+                114,
+            ),
+        )
+
+        return (
+            padded,
+            scale,
+            left,
+            top,
+        )
+
+
+    # ========================================================
+    # PREPROCESS
+    # ========================================================
+
+    def preprocess(
+        self,
+        image,
+    ):
+
+        padded, scale, pad_x, pad_y = (
+            self.letterbox(
+                image
+            )
+        )
+
+        rgb = cv2.cvtColor(
+            padded,
+            cv2.COLOR_BGR2RGB,
+        )
+
+        tensor = (
+            rgb
+            .astype(
+                np.float32
+            )
+            /
+            255.0
+        )
+
+        tensor = np.transpose(
+            tensor,
+            (
+                2,
+                0,
+                1,
+            ),
+        )
+
+        tensor = np.expand_dims(
+            tensor,
+            axis=0,
+        )
+
+        tensor = np.ascontiguousarray(
+            tensor,
+            dtype=np.float32,
+        )
+
+        return (
+            tensor,
+            scale,
+            pad_x,
+            pad_y,
+        )
+
+
+    # ========================================================
+    # NMS
+    # ========================================================
+
+    def nms(
+        self,
+        boxes,
+        scores,
+    ):
+
+        if len(
+            boxes
+        ) == 0:
+
+            return []
+
+        boxes_xywh = []
+
+        for box in boxes:
+
+            x1, y1, x2, y2 = box
+
+            boxes_xywh.append(
+                [
+                    float(x1),
+                    float(y1),
+                    float(
+                        x2 - x1
+                    ),
+                    float(
+                        y2 - y1
+                    ),
+                ]
+            )
+
+        indices = cv2.dnn.NMSBoxes(
+            boxes_xywh,
+            scores,
+            CONF_THRESHOLD,
+            NMS_THRESHOLD,
+        )
+
+        if len(
+            indices
+        ) == 0:
+
+            return []
+
+        return [
+            int(i)
+            for i in np.array(
+                indices
+            ).reshape(-1)
+        ]
+
+
+    # ========================================================
+    # SIGMOID
+    # ========================================================
+
+    @staticmethod
+    def sigmoid(
+        value,
+    ):
+
+        value = np.clip(
+            value,
+            -50.0,
+            50.0,
+        )
+
+        return (
+            1.0
+            /
+            (
+                1.0
+                +
+                np.exp(
+                    -value
+                )
+            )
+        )
+
+
+    # ========================================================
+    # MASK
+    # ========================================================
+
+    def build_mask(
+        self,
+        coefficients,
+        prototypes,
+        box_model,
+        original_shape,
+        scale,
+        pad_x,
+        pad_y,
+    ):
+
+        # prototypes:
+        # [32, 160, 160]
+
+        channels, proto_h, proto_w = (
+            prototypes.shape
+        )
+
+        proto_flat = (
+            prototypes.reshape(
+                channels,
+                -1,
+            )
+        )
+
+        mask = (
+            coefficients
+            @
+            proto_flat
+        )
+
+        mask = self.sigmoid(
+            mask
+        )
+
+        mask = mask.reshape(
+            proto_h,
+            proto_w,
+        )
+
+        # Prototype -> 640 x 640
+        mask_640 = cv2.resize(
+            mask,
+            (
+                MODEL_SIZE,
+                MODEL_SIZE,
+            ),
+            interpolation=
+                cv2.INTER_LINEAR,
+        )
+
+        x1, y1, x2, y2 = (
+            box_model
+        )
+
+        x1 = int(
+            max(
+                0,
+                min(
+                    MODEL_SIZE - 1,
+                    round(x1),
+                ),
+            )
+        )
+
+        y1 = int(
+            max(
+                0,
+                min(
+                    MODEL_SIZE - 1,
+                    round(y1),
+                ),
+            )
+        )
+
+        x2 = int(
+            max(
+                x1 + 1,
+                min(
+                    MODEL_SIZE,
+                    round(x2),
+                ),
+            )
+        )
+
+        y2 = int(
+            max(
+                y1 + 1,
+                min(
+                    MODEL_SIZE,
+                    round(y2),
+                ),
+            )
+        )
+
+        crop = np.zeros(
+            (
+                MODEL_SIZE,
+                MODEL_SIZE,
+            ),
+            dtype=np.float32,
+        )
+
+        crop[
+            y1:y2,
+            x1:x2
+        ] = (
+            mask_640[
+                y1:y2,
+                x1:x2
+            ]
+        )
+
+        original_h, original_w = (
+            original_shape
+        )
+
+        scaled_w = int(
+            round(
+                original_w
+                *
+                scale
+            )
+        )
+
+        scaled_h = int(
+            round(
+                original_h
+                *
+                scale
+            )
+        )
+
+        x_start = int(
+            pad_x
+        )
+
+        y_start = int(
+            pad_y
+        )
+
+        x_end = (
+            x_start
+            +
+            scaled_w
+        )
+
+        y_end = (
+            y_start
+            +
+            scaled_h
+        )
+
+        crop = crop[
+            y_start:y_end,
+            x_start:x_end
+        ]
+
+        if crop.size == 0:
+
+            return None
+
+        mask_original = cv2.resize(
+            crop,
+            (
+                original_w,
+                original_h,
+            ),
+            interpolation=
+                cv2.INTER_LINEAR,
+        )
+
+        return (
+            mask_original
+            >
+            MASK_THRESHOLD
+        )
+
+
+    # ========================================================
+    # POSTPROCESS
+    # ========================================================
+
+    def postprocess(
+        self,
+        output0,
+        output1,
+        image_shape,
+        scale,
+        pad_x,
+        pad_y,
+    ):
+
+        predictions = (
+            output0[0]
+            .transpose(
+                1,
+                0,
+            )
+        )
+
+        prototypes = (
+            output1[0]
+        )
+
+        boxes_model = []
+        boxes_original = []
+        scores = []
+        coefficients = []
+
+        original_h, original_w = (
+            image_shape
+        )
+
+        for prediction in predictions:
+
+            confidence = float(
+                prediction[4]
+            )
+
+            if (
+                confidence
+                <
+                CONF_THRESHOLD
+            ):
+
+                continue
+
+            cx = float(
+                prediction[0]
+            )
+
+            cy = float(
+                prediction[1]
+            )
+
+            width = float(
+                prediction[2]
+            )
+
+            height = float(
+                prediction[3]
+            )
+
+            x1_model = (
+                cx
+                -
+                width / 2.0
+            )
+
+            y1_model = (
+                cy
+                -
+                height / 2.0
+            )
+
+            x2_model = (
+                cx
+                +
+                width / 2.0
+            )
+
+            y2_model = (
+                cy
+                +
+                height / 2.0
+            )
+
+            x1 = (
+                x1_model
+                -
+                pad_x
+            ) / scale
+
+            y1 = (
+                y1_model
+                -
+                pad_y
+            ) / scale
+
+            x2 = (
+                x2_model
+                -
+                pad_x
+            ) / scale
+
+            y2 = (
+                y2_model
+                -
+                pad_y
+            ) / scale
+
+            x1 = float(
+                np.clip(
+                    x1,
+                    0,
+                    original_w - 1,
+                )
+            )
+
+            y1 = float(
+                np.clip(
+                    y1,
+                    0,
+                    original_h - 1,
+                )
+            )
+
+            x2 = float(
+                np.clip(
+                    x2,
+                    0,
+                    original_w - 1,
+                )
+            )
+
+            y2 = float(
+                np.clip(
+                    y2,
+                    0,
+                    original_h - 1,
+                )
+            )
+
+            if (
+                x2 <= x1
+                or
+                y2 <= y1
+            ):
+
+                continue
+
+            boxes_model.append(
+                [
+                    x1_model,
+                    y1_model,
+                    x2_model,
+                    y2_model,
+                ]
+            )
+
+            boxes_original.append(
+                [
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                ]
+            )
+
+            scores.append(
+                confidence
+            )
+
+            coefficients.append(
+                prediction[
+                    5:37
+                ].astype(
+                    np.float32
+                )
+            )
+
+        keep = self.nms(
+            boxes_original,
+            scores,
+        )
+
+        detections = []
+
+        for index in keep:
+
+            mask = self.build_mask(
+                coefficients[index],
+                prototypes,
+                boxes_model[index],
+                image_shape,
+                scale,
+                pad_x,
+                pad_y,
+            )
+
+            if mask is None:
+
+                continue
+
+            if (
+                np.count_nonzero(
+                    mask
+                )
+                <
+                20
+            ):
+
+                continue
+
+            detections.append(
+                {
+                    "box":
+                        boxes_original[index],
+
+                    "score":
+                        float(
+                            scores[index]
+                        ),
+
+                    "mask":
+                        mask,
+                }
+            )
+
+        detections.sort(
+            key=lambda item:
+                item["score"],
+            reverse=True,
+        )
+
+        return detections
+
+
+    # ========================================================
+    # MASK -> XYZ
+    # ========================================================
+
+    def mask_to_xyz(
+        self,
+        mask,
+        xyz_image,
+    ):
+
+        points = (
+            xyz_image[
+                mask
+            ]
+        )
+
+        if (
+            points.shape[0]
+            <
+            MIN_VALID_3D_POINTS
+        ):
+
+            return None
+
+        valid = np.all(
+            np.isfinite(
+                points
+            ),
+            axis=1,
+        )
+
+        valid &= (
+            points[:, 2]
+            >
+            MIN_DEPTH_M
+        )
+
+        valid &= (
+            points[:, 2]
+            <
+            MAX_DEPTH_M
+        )
+
+        points = (
+            points[
+                valid
+            ]
+        )
+
+        if (
+            points.shape[0]
+            <
+            MIN_VALID_3D_POINTS
+        ):
+
+            return None
+
+        # Najpierw odrzucamy punkty o skrajnej głębokości.
+        z = points[
+            :,
+            2
+        ]
+
+        z_low = np.percentile(
+            z,
+            DEPTH_PERCENTILE_LOW,
+        )
+
+        z_high = np.percentile(
+            z,
+            DEPTH_PERCENTILE_HIGH,
+        )
+
+        points = points[
+            (
+                points[:, 2]
+                >=
+                z_low
+            )
+            &
+            (
+                points[:, 2]
+                <=
+                z_high
+            )
+        ]
+
+        if (
+            points.shape[0]
+            <
+            MIN_VALID_3D_POINTS
+        ):
+
+            return None
+
+        center = np.median(
+            points,
+            axis=0,
+        )
+
+        return (
+            center.astype(
+                np.float64
+            ),
+            int(
+                points.shape[0]
+            ),
+        )
+
+
+    # ========================================================
+    # TF CAMERA -> BASE
+    # ========================================================
+
+    def transform_to_base(
+        self,
+        point_camera,
+    ):
+
+        try:
+
+            transform = (
+                self.tf_buffer
+                .lookup_transform(
+                    BASE_FRAME,
+                    CAMERA_FRAME,
+                    rclpy.time.Time(),
+                )
+            )
+
+        except Exception as exc:
+
+            self.get_logger().warn(
+                f"Brak TF "
+                f"{CAMERA_FRAME}->{BASE_FRAME}: "
+                f"{exc}"
+            )
+
+            return None
+
+        t = (
+            transform
+            .transform
+            .translation
+        )
+
+        q = (
+            transform
+            .transform
+            .rotation
+        )
+
+        x = q.x
+        y = q.y
+        z = q.z
+        w = q.w
+
+        rotation = np.array(
+            [
+                [
+                    1 - 2 * (y*y + z*z),
+                    2 * (x*y - z*w),
+                    2 * (x*z + y*w),
+                ],
+                [
+                    2 * (x*y + z*w),
+                    1 - 2 * (x*x + z*z),
+                    2 * (y*z - x*w),
+                ],
+                [
+                    2 * (x*z - y*w),
+                    2 * (y*z + x*w),
+                    1 - 2 * (x*x + y*y),
+                ],
+            ],
+            dtype=np.float64,
+        )
+
+        translation = np.array(
+            [
+                t.x,
+                t.y,
+                t.z,
+            ],
+            dtype=np.float64,
+        )
+
+        camera = np.array(
+            point_camera,
+            dtype=np.float64,
+        )
+
+        return (
+            rotation
+            @
+            camera
+            +
+            translation
+        )
+
+
+    # ========================================================
+    # DEBUG
+    # ========================================================
+
+    def publish_debug(
+        self,
+        image,
+        source_msg,
+    ):
+
+        success, encoded = cv2.imencode(
+            ".jpg",
+            image,
+            [
+                int(
+                    cv2.IMWRITE_JPEG_QUALITY
+                ),
+                85,
+            ],
+        )
+
+        if not success:
+
+            return
+
+        msg = (
+            CompressedImage()
+        )
+
+        msg.header = (
+            source_msg.header
+        )
+
+        msg.header.frame_id = (
+            CAMERA_FRAME
+        )
+
+        msg.format = "jpeg"
+
+        msg.data = (
+            encoded.tobytes()
+        )
+
+        self.debug_pub.publish(
+            msg
+        )
+
+
+    # ========================================================
+    # NO DETECTION
+    # ========================================================
+
+    def publish_not_detected(
+        self,
+        debug,
+        image_msg,
+    ):
+
+        detected = Bool()
+        detected.data = False
+
+        self.detected_pub.publish(
+            detected
+        )
+
+        confidence = Float32()
+        confidence.data = 0.0
+
+        self.confidence_pub.publish(
+            confidence
+        )
+
+        cv2.putText(
+            debug,
+            "AI CUBE: ---",
+            (
+                10,
+                25,
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (
+                0,
+                0,
+                255,
+            ),
+            2,
+            cv2.LINE_AA,
+        )
+
+        self.publish_debug(
+            debug,
+            image_msg,
+        )
+
+
+    # ========================================================
+    # CALLBACK
+    # ========================================================
+
+    def callback(
+        self,
+        image_msg,
+        points_msg,
+    ):
+
+        try:
+
+            image = self.ros_bgr(
+                image_msg
+            )
+
+            xyz_image = self.ros_xyz(
+                points_msg
+            )
+
+        except Exception as exc:
+
+            self.get_logger().error(
+                f"Input error: {exc}"
+            )
+
+            return
+
+        if (
+            image.shape[:2]
+            !=
+            xyz_image.shape[:2]
+        ):
+
+            self.get_logger().error(
+                "Obraz i XYZ maja inne wymiary."
+            )
+
+            return
+
+        debug = (
+            image.copy()
+        )
+
+        # ====================================================
+        # INFERENCE
+        # ====================================================
+
+        tensor, scale, pad_x, pad_y = (
+            self.preprocess(
+                image
+            )
+        )
+
+        try:
+
+            output0, output1 = (
+                self.session.run(
+                    [
+                        self.output_detection_name,
+                        self.output_proto_name,
+                    ],
+                    {
+                        self.input_name:
+                            tensor
+                    },
+                )
+            )
+
+        except Exception as exc:
+
+            self.get_logger().error(
+                f"ONNX inference error: "
+                f"{exc}"
+            )
+
+            return
+
+        detections = self.postprocess(
+            output0,
+            output1,
+            image.shape[:2],
+            scale,
+            pad_x,
+            pad_y,
+        )
+
+        if not detections:
+
+            self.publish_not_detected(
+                debug,
+                image_msg,
+            )
+
+            return
+
+        # Najpewniejsza kostka.
+        detection = (
+            detections[0]
+        )
+
+        score = float(
+            detection[
+                "score"
+            ]
+        )
+
+        mask = (
+            detection[
+                "mask"
+            ]
+        )
+
+        box = (
+            detection[
+                "box"
+            ]
+        )
+
+        result_3d = self.mask_to_xyz(
+            mask,
+            xyz_image,
+        )
+
+        if result_3d is None:
+
+            self.get_logger().warn(
+                "AI widzi kostke, "
+                "ale brak stabilnej glebi."
+            )
+
+            self.publish_not_detected(
+                debug,
+                image_msg,
+            )
+
+            return
+
+        (
+            camera_center,
+            valid_points,
+        ) = result_3d
+
+        # ====================================================
+        # CAMERA POINT
+        # ====================================================
+
+        camera_msg = (
+            PointStamped()
+        )
+
+        camera_msg.header = (
+            image_msg.header
+        )
+
+        camera_msg.header.frame_id = (
+            CAMERA_FRAME
+        )
+
+        camera_msg.point.x = float(
+            camera_center[0]
+        )
+
+        camera_msg.point.y = float(
+            camera_center[1]
+        )
+
+        camera_msg.point.z = float(
+            camera_center[2]
+        )
+
+        self.camera_point_pub.publish(
+            camera_msg
+        )
+
+        # ====================================================
+        # BASE POINT
+        # ====================================================
+
+        base_center = (
+            self.transform_to_base(
+                camera_center
+            )
+        )
+
+        if base_center is not None:
+
+            base_msg = (
+                PointStamped()
+            )
+
+            base_msg.header.stamp = (
+                image_msg.header.stamp
+            )
+
+            base_msg.header.frame_id = (
+                BASE_FRAME
+            )
+
+            base_msg.point.x = float(
+                base_center[0]
+            )
+
+            base_msg.point.y = float(
+                base_center[1]
+            )
+
+            base_msg.point.z = float(
+                base_center[2]
+            )
+
+            self.base_point_pub.publish(
+                base_msg
+            )
+
+        # ====================================================
+        # STATUS
+        # ====================================================
+
+        detected_msg = Bool()
+        detected_msg.data = True
+
+        self.detected_pub.publish(
+            detected_msg
+        )
+
+        confidence_msg = Float32()
+        confidence_msg.data = score
+
+        self.confidence_pub.publish(
+            confidence_msg
+        )
+
+        # ====================================================
+        # INFO JSON
+        # ====================================================
+
+        info = {
+            "detected":
+                True,
+
+            "class":
+                CLASS_NAME,
+
+            "confidence":
+                round(
+                    score,
+                    4,
+                ),
+
+            "valid_depth_points":
+                valid_points,
+
+            "camera": {
+                "x":
+                    round(
+                        float(
+                            camera_center[0]
+                        ),
+                        5,
+                    ),
+
+                "y":
+                    round(
+                        float(
+                            camera_center[1]
+                        ),
+                        5,
+                    ),
+
+                "z":
+                    round(
+                        float(
+                            camera_center[2]
+                        ),
+                        5,
+                    ),
+            },
+        }
+
+        if base_center is not None:
+
+            info[
+                "base"
+            ] = {
+                "x":
+                    round(
+                        float(
+                            base_center[0]
+                        ),
+                        5,
+                    ),
+
+                "y":
+                    round(
+                        float(
+                            base_center[1]
+                        ),
+                        5,
+                    ),
+
+                "z":
+                    round(
+                        float(
+                            base_center[2]
+                        ),
+                        5,
+                    ),
+            }
+
+        info_msg = String()
+
+        info_msg.data = json.dumps(
+            info
+        )
+
+        self.info_pub.publish(
+            info_msg
+        )
+
+        # ====================================================
+        # DEBUG IMAGE
+        # ====================================================
+
+        overlay = debug.copy()
+
+        overlay[
+            mask
+        ] = (
+            0,
+            255,
+            0,
+        )
+
+        debug = cv2.addWeighted(
+            overlay,
+            0.30,
+            debug,
+            0.70,
+            0,
+        )
+
+        x1, y1, x2, y2 = [
+            int(
+                round(value)
+            )
+            for value in box
+        ]
+
+        cv2.rectangle(
+            debug,
+            (
+                x1,
+                y1,
+            ),
+            (
+                x2,
+                y2,
+            ),
+            (
+                0,
+                255,
+                0,
+            ),
+            2,
+        )
+
+        label = (
+            f"{CLASS_NAME} "
+            f"{score * 100.0:.1f}%"
+        )
+
+        cv2.putText(
+            debug,
+            label,
+            (
+                max(
+                    0,
+                    x1,
+                ),
+                max(
+                    20,
+                    y1 - 8,
+                ),
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (
+                0,
+                255,
+                0,
+            ),
+            2,
+            cv2.LINE_AA,
+        )
+
+        xyz_text = (
+            f"C "
+            f"{camera_center[0]:+.3f} "
+            f"{camera_center[1]:+.3f} "
+            f"{camera_center[2]:+.3f} m"
+        )
+
+        cv2.putText(
+            debug,
+            xyz_text,
+            (
+                10,
+                25,
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.50,
+            (
+                255,
+                255,
+                0,
+            ),
+            2,
+            cv2.LINE_AA,
+        )
+
+        if base_center is not None:
+
+            base_text = (
+                f"B "
+                f"{base_center[0]:+.3f} "
+                f"{base_center[1]:+.3f} "
+                f"{base_center[2]:+.3f} m"
+            )
+
+            cv2.putText(
+                debug,
+                base_text,
+                (
+                    10,
+                    50,
+                ),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.50,
+                (
+                    255,
+                    255,
+                    0,
+                ),
+                2,
+                cv2.LINE_AA,
+            )
+
+        self.publish_debug(
+            debug,
+            image_msg,
+        )
+
+
+def main(
+    args=None,
+):
+
+    rclpy.init(
+        args=args
+    )
+
+    node = AICubeDetector()
+
+    try:
+
+        rclpy.spin(
+            node
+        )
+
+    except KeyboardInterrupt:
+
+        pass
+
+    finally:
+
+        node.destroy_node()
+
+        if rclpy.ok():
+
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+
+    main()
+
+============================================================
+FILE: src/camera_bridge/camera_bridge/stereo_depth.py
+============================================================
+import os
+
+import cv2
+import numpy as np
+import yaml
+
+import rclpy
+
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+
+from sensor_msgs.msg import (
+    Image,
+    CompressedImage,
+)
+
+from std_msgs.msg import Float32
+
+import message_filters
+
+
+# ============================================================
+# INPUT
+# ============================================================
+
+LEFT_TOPIC = (
+    "/camera_left/left_camera/image_raw"
+)
+
+RIGHT_TOPIC = (
+    "/camera_right/right_camera/image_raw"
+)
+
+
+# ============================================================
+# OUTPUT
+# ============================================================
+
+LEFT_RECTIFIED_TOPIC = (
+    "/stereo/left_rectified"
+)
+
+POINTS_TOPIC = (
+    "/stereo/points"
+)
+
+
+# ============================================================
+# FRAME
+# ============================================================
+
+OPTICAL_FRAME = (
+    "stereo_camera_optical"
+)
+
+
+# ============================================================
+# KALIBRACJA
+# ============================================================
+
+CALIBRATION_DIR = os.path.expanduser(
+    "~/robot_ws/stereo_calibration_v3"
+)
+
+LEFT_YAML = os.path.join(
+    CALIBRATION_DIR,
+    "left.yaml",
+)
+
+RIGHT_YAML = os.path.join(
+    CALIBRATION_DIR,
+    "right.yaml",
+)
+
+STEREO_YAML = os.path.join(
+    CALIBRATION_DIR,
+    "stereo.yaml",
+)
+
+
+# ============================================================
+# SYNCHRONIZACJA
+# ============================================================
+
+SYNC_QUEUE = 30
+SYNC_SLOP_SEC = 0.10
+
+
+# ============================================================
+# SGBM
+# ============================================================
+
+MIN_DISPARITY = 0
+NUM_DISPARITIES = 128
+BLOCK_SIZE = 5
+
+
+# ============================================================
+# DISPLAY
+# ============================================================
+
+DISPLAY_FLIP_CODE = -1
+
+
+class StereoDepth(Node):
+
+    def __init__(self):
+
+        super().__init__(
+            "stereo_depth"
+        )
+
+        self.maps_ready = False
+
+        self.image_size = None
+
+        self.left_map_x = None
+        self.left_map_y = None
+
+        self.right_map_x = None
+        self.right_map_y = None
+
+
+        # ====================================================
+        # CALIBRATION
+        # ====================================================
+
+        self.load_calibration()
+
+
+        # ====================================================
+        # SGBM
+        # ====================================================
+
+        self.stereo = (
+            cv2.StereoSGBM_create(
+
+                minDisparity=
+                    MIN_DISPARITY,
+
+                numDisparities=
+                    NUM_DISPARITIES,
+
+                blockSize=
+                    BLOCK_SIZE,
+
+                P1=
+                    8
+                    *
+                    BLOCK_SIZE
+                    *
+                    BLOCK_SIZE,
+
+                P2=
+                    32
+                    *
+                    BLOCK_SIZE
+                    *
+                    BLOCK_SIZE,
+
+                disp12MaxDiff=1,
+
+                uniquenessRatio=10,
+
+                speckleWindowSize=100,
+
+                speckleRange=2,
+
+                preFilterCap=31,
+
+                mode=
+                    cv2.STEREO_SGBM_MODE_SGBM_3WAY,
+            )
+        )
+
+
+        # ====================================================
+        # EXISTING OUTPUTS
+        # ====================================================
+
+        self.cameras_pub = (
+            self.create_publisher(
+                CompressedImage,
+                "/stereo/rectified_check/compressed",
+                5,
+            )
+        )
+
+        self.rectified_debug_pub = (
+            self.create_publisher(
+                CompressedImage,
+                "/stereo/rectified_debug/compressed",
+                5,
+            )
+        )
+
+        self.depth_pub = (
+            self.create_publisher(
+                CompressedImage,
+                "/stereo/depth/compressed",
+                5,
+            )
+        )
+
+        self.preview_pub = (
+            self.create_publisher(
+                CompressedImage,
+                "/stereo/preview/compressed",
+                5,
+            )
+        )
+
+        self.distance_pub = (
+            self.create_publisher(
+                Float32,
+                "/stereo/center_distance",
+                10,
+            )
+        )
+
+
+        # ====================================================
+        # NEW MACHINE-READABLE OUTPUTS
+        # ====================================================
+
+        self.left_rect_pub = (
+            self.create_publisher(
+                Image,
+                LEFT_RECTIFIED_TOPIC,
+                qos_profile_sensor_data,
+            )
+        )
+
+        self.points_pub = (
+            self.create_publisher(
+                Image,
+                POINTS_TOPIC,
+                qos_profile_sensor_data,
+            )
+        )
+
+
+        # ====================================================
+        # INPUT
+        # ====================================================
+
+        self.left_sub = (
+            message_filters.Subscriber(
+                self,
+                Image,
+                LEFT_TOPIC,
+                qos_profile=
+                    qos_profile_sensor_data,
+            )
+        )
+
+        self.right_sub = (
+            message_filters.Subscriber(
+                self,
+                Image,
+                RIGHT_TOPIC,
+                qos_profile=
+                    qos_profile_sensor_data,
+            )
+        )
+
+        self.sync = (
+            message_filters
+            .ApproximateTimeSynchronizer(
+
+                [
+                    self.left_sub,
+                    self.right_sub,
+                ],
+
+                queue_size=
+                    SYNC_QUEUE,
+
+                slop=
+                    SYNC_SLOP_SEC,
+            )
+        )
+
+        self.sync.registerCallback(
+            self.stereo_callback
+        )
+
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        self.get_logger().info(
+            "STEREO DEPTH + XYZ START"
+        )
+
+        self.get_logger().info(
+            f"Kalibracja: {CALIBRATION_DIR}"
+        )
+
+        self.get_logger().info(
+            f"Optical frame: {OPTICAL_FRAME}"
+        )
+
+        self.get_logger().info(
+            "Publikuje:"
+        )
+
+        self.get_logger().info(
+            LEFT_RECTIFIED_TOPIC
+        )
+
+        self.get_logger().info(
+            POINTS_TOPIC
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+
+    # ========================================================
+    # YAML
+    # ========================================================
+
+    def read_yaml(
+        self,
+        path,
+    ):
+
+        if not os.path.exists(
+            path
+        ):
+
+            raise RuntimeError(
+                f"Brak pliku: {path}"
+            )
+
+        with open(
+            path,
+            "r",
+        ) as file:
+
+            return yaml.safe_load(
+                file
+            )
+
+
+    def matrix_from_yaml(
+        self,
+        section,
+    ):
+
+        rows = int(
+            section["rows"]
+        )
+
+        cols = int(
+            section["cols"]
+        )
+
+        data = np.array(
+            section["data"],
+            dtype=np.float64,
+        )
+
+        return data.reshape(
+            rows,
+            cols,
+        )
+
+
+    # ========================================================
+    # CALIBRATION
+    # ========================================================
+
+    def load_calibration(
+        self,
+    ):
+
+        left = self.read_yaml(
+            LEFT_YAML
+        )
+
+        right = self.read_yaml(
+            RIGHT_YAML
+        )
+
+        stereo = self.read_yaml(
+            STEREO_YAML
+        )
+
+
+        width = int(
+            left[
+                "image_width"
+            ]
+        )
+
+        height = int(
+            left[
+                "image_height"
+            ]
+        )
+
+        self.image_size = (
+            width,
+            height,
+        )
+
+
+        self.left_k = (
+            self.matrix_from_yaml(
+                left[
+                    "camera_matrix"
+                ]
+            )
+        )
+
+        self.left_d = (
+            self.matrix_from_yaml(
+                left[
+                    "distortion_coefficients"
+                ]
+            )
+        )
+
+        self.left_r = (
+            self.matrix_from_yaml(
+                left[
+                    "rectification_matrix"
+                ]
+            )
+        )
+
+        self.left_p = (
+            self.matrix_from_yaml(
+                left[
+                    "projection_matrix"
+                ]
+            )
+        )
+
+
+        self.right_k = (
+            self.matrix_from_yaml(
+                right[
+                    "camera_matrix"
+                ]
+            )
+        )
+
+        self.right_d = (
+            self.matrix_from_yaml(
+                right[
+                    "distortion_coefficients"
+                ]
+            )
+        )
+
+        self.right_r = (
+            self.matrix_from_yaml(
+                right[
+                    "rectification_matrix"
+                ]
+            )
+        )
+
+        self.right_p = (
+            self.matrix_from_yaml(
+                right[
+                    "projection_matrix"
+                ]
+            )
+        )
+
+
+        self.q_matrix = (
+            self.matrix_from_yaml(
+                stereo[
+                    "Q"
+                ]
+            )
+        )
+
+
+        (
+            self.left_map_x,
+            self.left_map_y,
+        ) = (
+            cv2.initUndistortRectifyMap(
+
+                self.left_k,
+
+                self.left_d,
+
+                self.left_r,
+
+                self.left_p[
+                    :,
+                    :3
+                ],
+
+                self.image_size,
+
+                cv2.CV_32FC1,
+            )
+        )
+
+
+        (
+            self.right_map_x,
+            self.right_map_y,
+        ) = (
+            cv2.initUndistortRectifyMap(
+
+                self.right_k,
+
+                self.right_d,
+
+                self.right_r,
+
+                self.right_p[
+                    :,
+                    :3
+                ],
+
+                self.image_size,
+
+                cv2.CV_32FC1,
+            )
+        )
+
+
+        self.maps_ready = True
+
+
+        self.get_logger().info(
+            f"Kalibracja wczytana: "
+            f"{width}x{height}"
+        )
+
+
+    # ========================================================
+    # ROS IMAGE -> BGR
+    # ========================================================
+
+    def ros_image_to_bgr(
+        self,
+        msg,
+    ):
+
+        height = int(
+            msg.height
+        )
+
+        width = int(
+            msg.width
+        )
+
+        step = int(
+            msg.step
+        )
+
+
+        if msg.encoding not in (
+            "bgr8",
+            "rgb8",
+        ):
+
+            raise RuntimeError(
+                f"Nieobslugiwane encoding: "
+                f"{msg.encoding}"
+            )
+
+
+        expected_row_bytes = (
+            width
+            *
+            3
+        )
+
+
+        raw = np.frombuffer(
+            msg.data,
+            dtype=np.uint8,
+        )
+
+
+        expected_total = (
+            step
+            *
+            height
+        )
+
+
+        if raw.size < expected_total:
+
+            raise RuntimeError(
+                "Za malo danych obrazu."
+            )
+
+
+        rows = (
+            raw[
+                :expected_total
+            ]
+            .reshape(
+                height,
+                step,
+            )
+        )
+
+
+        pixels = rows[
+            :,
+            :expected_row_bytes
+        ]
+
+
+        image = pixels.reshape(
+            height,
+            width,
+            3,
+        )
+
+
+        if msg.encoding == "rgb8":
+
+            image = (
+                cv2.cvtColor(
+                    image,
+                    cv2.COLOR_RGB2BGR,
+                )
+            )
+
+
+        return np.ascontiguousarray(
+            image
+        )
+
+
+    # ========================================================
+    # RAW BGR IMAGE
+    # ========================================================
+
+    def publish_bgr_image(
+        self,
+        publisher,
+        image,
+        source_msg,
+    ):
+
+        image = np.ascontiguousarray(
+            image,
+            dtype=np.uint8,
+        )
+
+        msg = Image()
+
+        msg.header = (
+            source_msg.header
+        )
+
+        msg.header.frame_id = (
+            OPTICAL_FRAME
+        )
+
+        msg.height = int(
+            image.shape[0]
+        )
+
+        msg.width = int(
+            image.shape[1]
+        )
+
+        msg.encoding = "bgr8"
+
+        msg.is_bigendian = False
+
+        msg.step = int(
+            image.shape[1]
+            *
+            3
+        )
+
+        msg.data = (
+            image.tobytes()
+        )
+
+        publisher.publish(
+            msg
+        )
+
+
+    # ========================================================
+    # XYZ IMAGE
+    # ========================================================
+
+    def publish_xyz_image(
+        self,
+        points_3d,
+        source_msg,
+    ):
+
+        points = np.ascontiguousarray(
+            points_3d,
+            dtype=np.float32,
+        )
+
+
+        msg = Image()
+
+        msg.header = (
+            source_msg.header
+        )
+
+        msg.header.frame_id = (
+            OPTICAL_FRAME
+        )
+
+        msg.height = int(
+            points.shape[0]
+        )
+
+        msg.width = int(
+            points.shape[1]
+        )
+
+        msg.encoding = "32FC3"
+
+        msg.is_bigendian = False
+
+        msg.step = int(
+            points.shape[1]
+            *
+            3
+            *
+            4
+        )
+
+        msg.data = (
+            points.tobytes()
+        )
+
+        self.points_pub.publish(
+            msg
+        )
+
+
+    # ========================================================
+    # JPEG
+    # ========================================================
+
+    def publish_compressed(
+        self,
+        publisher,
+        image,
+        source_msg,
+    ):
+
+        success, encoded = (
+            cv2.imencode(
+
+                ".jpg",
+
+                image,
+
+                [
+                    int(
+                        cv2.IMWRITE_JPEG_QUALITY
+                    ),
+                    80,
+                ],
+            )
+        )
+
+
+        if not success:
+            return
+
+
+        msg = CompressedImage()
+
+        msg.header = (
+            source_msg.header
+        )
+
+        msg.header.frame_id = (
+            OPTICAL_FRAME
+        )
+
+        msg.format = "jpeg"
+
+        msg.data = (
+            encoded.tobytes()
+        )
+
+        publisher.publish(
+            msg
+        )
+
+
+    # ========================================================
+    # CENTER DISTANCE
+    # ========================================================
+
+    def center_distance(
+        self,
+        points_3d,
+        disparity,
+    ):
+
+        height, width = (
+            disparity.shape
+        )
+
+        cx = (
+            width // 2
+        )
+
+        cy = (
+            height // 2
+        )
+
+        radius = 10
+
+        x1 = max(
+            0,
+            cx - radius,
+        )
+
+        x2 = min(
+            width,
+            cx + radius + 1,
+        )
+
+        y1 = max(
+            0,
+            cy - radius,
+        )
+
+        y2 = min(
+            height,
+            cy + radius + 1,
+        )
+
+
+        disparity_roi = disparity[
+            y1:y2,
+            x1:x2,
+        ]
+
+
+        points_roi = points_3d[
+            y1:y2,
+            x1:x2,
+            :
+        ]
+
+
+        z = points_roi[
+            :,
+            :,
+            2
+        ]
+
+
+        valid = (
+            np.isfinite(
+                z
+            )
+            &
+            (
+                z > 0.05
+            )
+            &
+            (
+                z < 10.0
+            )
+            &
+            (
+                disparity_roi > 1.0
+            )
+        )
+
+
+        values = z[
+            valid
+        ]
+
+
+        if values.size < 10:
+
+            return None
+
+
+        return float(
+            np.median(
+                values
+            )
+        )
+
+
+    # ========================================================
+    # CALLBACK
+    # ========================================================
+
+    def stereo_callback(
+        self,
+        left_msg,
+        right_msg,
+    ):
+
+        if not self.maps_ready:
+            return
+
+
+        try:
+
+            left = (
+                self.ros_image_to_bgr(
+                    left_msg
+                )
+            )
+
+            right = (
+                self.ros_image_to_bgr(
+                    right_msg
+                )
+            )
+
+        except Exception as exc:
+
+            self.get_logger().error(
+                f"Konwersja obrazu: {exc}"
+            )
+
+            return
+
+
+        if (
+            left.shape[1],
+            left.shape[0],
+        ) != self.image_size:
+
+            self.get_logger().error(
+                "Rozdzielczosc lewej kamery "
+                "nie pasuje do kalibracji."
+            )
+
+            return
+
+
+        if (
+            right.shape[1],
+            right.shape[0],
+        ) != self.image_size:
+
+            self.get_logger().error(
+                "Rozdzielczosc prawej kamery "
+                "nie pasuje do kalibracji."
+            )
+
+            return
+
+
+        # ====================================================
+        # RAW DISPLAY PAIR
+        # ====================================================
+
+        left_display = (
+            cv2.flip(
+                left,
+                DISPLAY_FLIP_CODE,
+            )
+        )
+
+        right_display = (
+            cv2.flip(
+                right,
+                DISPLAY_FLIP_CODE,
+            )
+        )
+
+        cameras = np.hstack(
+            (
+                left_display,
+                right_display,
+            )
+        )
+
+        self.publish_compressed(
+            self.cameras_pub,
+            cameras,
+            right_msg,
+        )
+
+
+        # ====================================================
+        # RECTIFICATION
+        # ====================================================
+
+        left_rect = (
+            cv2.remap(
+
+                left,
+
+                self.left_map_x,
+
+                self.left_map_y,
+
+                cv2.INTER_LINEAR,
+            )
+        )
+
+
+        right_rect = (
+            cv2.remap(
+
+                right,
+
+                self.right_map_x,
+
+                self.right_map_y,
+
+                cv2.INTER_LINEAR,
+            )
+        )
+
+
+        # Machine-readable rectified left.
+        self.publish_bgr_image(
+            self.left_rect_pub,
+            left_rect,
+            left_msg,
+        )
+
+
+        # ====================================================
+        # RECTIFIED DEBUG
+        # ====================================================
+
+        left_debug = (
+            cv2.flip(
+                left_rect,
+                DISPLAY_FLIP_CODE,
+            )
+        )
+
+        right_debug = (
+            cv2.flip(
+                right_rect,
+                DISPLAY_FLIP_CODE,
+            )
+        )
+
+        debug = np.hstack(
+            (
+                left_debug,
+                right_debug,
+            )
+        )
+
+
+        debug_h, debug_w = (
+            debug.shape[:2]
+        )
+
+
+        for y in range(
+            20,
+            debug_h,
+            20,
+        ):
+
+            cv2.line(
+                debug,
+                (
+                    0,
+                    y,
+                ),
+                (
+                    debug_w - 1,
+                    y,
+                ),
+                (
+                    0,
+                    255,
+                    0,
+                ),
+                1,
+            )
+
+
+        cv2.line(
+            debug,
+            (
+                left_debug.shape[1],
+                0,
+            ),
+            (
+                left_debug.shape[1],
+                debug_h - 1,
+            ),
+            (
+                0,
+                0,
+                255,
+            ),
+            1,
+        )
+
+
+        self.publish_compressed(
+            self.rectified_debug_pub,
+            debug,
+            right_msg,
+        )
+
+
+        # ====================================================
+        # GRAY
+        # ====================================================
+
+        left_gray = (
+            cv2.cvtColor(
+                left_rect,
+                cv2.COLOR_BGR2GRAY,
+            )
+        )
+
+        right_gray = (
+            cv2.cvtColor(
+                right_rect,
+                cv2.COLOR_BGR2GRAY,
+            )
+        )
+
+
+        # ====================================================
+        # DISPARITY
+        # ====================================================
+
+        disparity_raw = (
+            self.stereo.compute(
+                left_gray,
+                right_gray,
+            )
+        )
+
+
+        disparity = (
+            disparity_raw.astype(
+                np.float32
+            )
+            /
+            16.0
+        )
+
+
+        # ====================================================
+        # XYZ
+        # ====================================================
+
+        points_3d = (
+            cv2.reprojectImageTo3D(
+
+                disparity,
+
+                self.q_matrix,
+
+                handleMissingValues=True,
+            )
+        )
+
+
+        points_3d = (
+            points_3d.astype(
+                np.float32
+            )
+        )
+
+
+        # ====================================================
+        # INVALID -> NaN
+        # ====================================================
+
+        invalid = (
+            ~np.isfinite(
+                points_3d[
+                    :,
+                    :,
+                    2
+                ]
+            )
+            |
+            (
+                disparity <= 1.0
+            )
+            |
+            (
+                points_3d[
+                    :,
+                    :,
+                    2
+                ]
+                <= 0.05
+            )
+            |
+            (
+                points_3d[
+                    :,
+                    :,
+                    2
+                ]
+                > 10.0
+            )
+        )
+
+
+        points_3d[
+            invalid
+        ] = np.nan
+
+
+        self.publish_xyz_image(
+            points_3d,
+            left_msg,
+        )
+
+
+        distance = (
+            self.center_distance(
+                points_3d,
+                disparity,
+            )
+        )
+
+
+        if distance is not None:
+
+            distance_msg = (
+                Float32()
+            )
+
+            distance_msg.data = (
+                distance
+            )
+
+            self.distance_pub.publish(
+                distance_msg
+            )
+
+
+        # ====================================================
+        # PREVIEW
+        # ====================================================
+
+        preview = (
+            cv2.flip(
+                right_rect,
+                DISPLAY_FLIP_CODE,
+            )
+        )
+
+
+        height, width = (
+            preview.shape[:2]
+        )
+
+
+        cx = (
+            width // 2
+        )
+
+        cy = (
+            height // 2
+        )
+
+
+        cv2.rectangle(
+            preview,
+            (
+                cx - 10,
+                cy - 10,
+            ),
+            (
+                cx + 10,
+                cy + 10,
+            ),
+            (
+                0,
+                255,
+                0,
+            ),
+            1,
+        )
+
+
+        if distance is not None:
+
+            text = (
+                f"Distance: "
+                f"{distance:.3f} m"
+            )
+
+        else:
+
+            text = (
+                "Distance: ---"
+            )
+
+
+        cv2.putText(
+            preview,
+            text,
+            (
+                10,
+                25,
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (
+                0,
+                255,
+                0,
+            ),
+            2,
+            cv2.LINE_AA,
+        )
+
+
+        self.publish_compressed(
+            self.preview_pub,
+            preview,
+            right_msg,
+        )
+
+
+        # ====================================================
+        # COLOR DEPTH
+        # ====================================================
+
+        valid_disp = (
+            disparity.copy()
+        )
+
+        valid_disp[
+            valid_disp < 0
+        ] = 0
+
+
+        normalized = (
+            np.clip(
+                valid_disp
+                /
+                float(
+                    NUM_DISPARITIES
+                )
+                *
+                255.0,
+                0,
+                255,
+            )
+            .astype(
+                np.uint8
+            )
+        )
+
+
+        depth_color = (
+            cv2.applyColorMap(
+                normalized,
+                cv2.COLORMAP_TURBO,
+            )
+        )
+
+
+        depth_color = (
+            cv2.flip(
+                depth_color,
+                DISPLAY_FLIP_CODE,
+            )
+        )
+
+
+        depth_h, depth_w = (
+            depth_color.shape[:2]
+        )
+
+
+        depth_cx = (
+            depth_w // 2
+        )
+
+        depth_cy = (
+            depth_h // 2
+        )
+
+
+        cv2.rectangle(
+            depth_color,
+            (
+                depth_cx - 10,
+                depth_cy - 10,
+            ),
+            (
+                depth_cx + 10,
+                depth_cy + 10,
+            ),
+            (
+                255,
+                255,
+                255,
+            ),
+            1,
+        )
+
+
+        if distance is not None:
+
+            depth_text = (
+                f"Distance: "
+                f"{distance:.3f} m"
+            )
+
+        else:
+
+            depth_text = (
+                "Distance: ---"
+            )
+
+
+        cv2.putText(
+            depth_color,
+            depth_text,
+            (
+                10,
+                25,
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (
+                255,
+                255,
+                255,
+            ),
+            2,
+            cv2.LINE_AA,
+        )
+
+
+        self.publish_compressed(
+            self.depth_pub,
+            depth_color,
+            right_msg,
+        )
+
+
+def main(
+    args=None,
+):
+
+    rclpy.init(
+        args=args
+    )
+
+    node = (
+        StereoDepth()
+    )
+
+    try:
+
+        rclpy.spin(
+            node
+        )
+
+    except KeyboardInterrupt:
+
+        pass
+
+    finally:
+
+        node.destroy_node()
+
+        if rclpy.ok():
+
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+
+    main()
+============================================================
+FILE: src/camera_bridge/camera_bridge/dual_camera_node.py
+============================================================
+import cv2
+import numpy as np
+import rclpy
+
+from rclpy.node import Node
+from sensor_msgs.msg import CompressedImage
+
+
+class DualCameraNode(Node):
+    def __init__(self):
+        super().__init__("dual_camera_node")
+
+        self.left_publisher = self.create_publisher(
+            CompressedImage,
+            "/camera_left/image_raw/compressed",
+            5,
+        )
+
+        self.right_publisher = self.create_publisher(
+            CompressedImage,
+            "/camera_right/image_raw/compressed",
+            5,
+        )
+
+        # Najczęściej kamera 0 i kamera 1.
+        # Jeśli będą zamienione, zamień liczby miejscami.
+        self.left_camera = cv2.VideoCapture(0)
+        self.right_camera = cv2.VideoCapture(1)
+
+        self.configure_camera(self.left_camera)
+        self.configure_camera(self.right_camera)
+
+        if not self.left_camera.isOpened():
+            self.get_logger().error(
+                "Nie można otworzyć lewej kamery /dev/video0"
+            )
+
+        if not self.right_camera.isOpened():
+            self.get_logger().error(
+                "Nie można otworzyć prawej kamery /dev/video1"
+            )
+
+        # Około 10 klatek na sekundę.
+        self.timer = self.create_timer(
+            0.1,
+            self.timer_callback,
+        )
+
+        self.get_logger().info(
+            "Dual Camera Node uruchomiony"
+        )
+
+    def configure_camera(self, camera):
+        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        camera.set(cv2.CAP_PROP_FPS, 10)
+
+    def create_compressed_message(self, frame):
+        message = CompressedImage()
+
+        message.header.stamp = (
+            self.get_clock()
+            .now()
+            .to_msg()
+        )
+
+        message.format = "jpeg"
+
+        success, compressed = cv2.imencode(
+            ".jpg",
+            frame,
+            [
+                int(cv2.IMWRITE_JPEG_QUALITY),
+                70,
+            ],
+        )
+
+        if not success:
+            return None
+
+        message.data = np.asarray(
+            compressed,
+            dtype=np.uint8,
+        ).tobytes()
+
+        return message
+
+    def timer_callback(self):
+        left_success, left_frame = self.left_camera.read()
+        right_success, right_frame = self.right_camera.read()
+
+        if left_success:
+            left_message = self.create_compressed_message(
+                left_frame
+            )
+
+            if left_message is not None:
+                self.left_publisher.publish(
+                    left_message
+                )
+
+        if right_success:
+            right_message = self.create_compressed_message(
+                right_frame
+            )
+
+            if right_message is not None:
+                self.right_publisher.publish(
+                    right_message
+                )
+
+    def destroy_node(self):
+        self.left_camera.release()
+        self.right_camera.release()
+
+        super().destroy_node()
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = DualCameraNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
+============================================================
+FILE: src/camera_bridge/camera_bridge/stereo_calibrator.py
+============================================================
+import os
+import time
+
+import cv2
+import numpy as np
+import yaml
+
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+
+import message_filters
+
+
+# ============================================================
+# PLANSZA
+#
+# 7 x 9 pol
+# = 6 x 8 wewnetrznych naroznikow
+#
+# kwadrat 25 mm
+# ============================================================
+
+BOARD_COLS = 6
+BOARD_ROWS = 8
+SQUARE_SIZE = 0.025
+
+
+# ============================================================
+# KAMERY
+# ============================================================
+
+LEFT_TOPIC = "/camera_left/left_camera/image_raw"
+RIGHT_TOPIC = "/camera_right/right_camera/image_raw"
+
+
+# ============================================================
+# RZECZYWISTY BASELINE
+# ============================================================
+
+EXPECTED_BASELINE_M = 0.060
+
+BASELINE_WARNING_TOLERANCE_M = 0.005
+
+
+# ============================================================
+# ZBIERANIE PROBEK
+# ============================================================
+
+TARGET_SAMPLES = 12
+
+STABLE_FRAMES_REQUIRED = 4
+
+STABILITY_THRESHOLD = 0.010
+
+DIVERSITY_THRESHOLD = 0.075
+
+SAMPLE_COOLDOWN_SEC = 1.5
+
+
+# Plansza musi zajmowac przynajmniej 7% obrazu.
+MIN_BOARD_AREA_RATIO = 0.10
+
+MAX_BOARD_AREA_RATIO = 0.65
+
+
+# ============================================================
+# SYNCHRONIZACJA
+# ============================================================
+
+SYNC_QUEUE = 30
+
+# Maksymalnie 50 ms roznicy timestampow.
+SYNC_SLOP_SEC = 0.10
+
+
+# ============================================================
+# WYJSCIE
+# ============================================================
+
+OUTPUT_DIR = os.path.expanduser(
+    "~/robot_ws/stereo_calibration_v3"
+)
+
+SAMPLES_DIR = os.path.join(
+    OUTPUT_DIR,
+    "samples"
+)
+
+
+class StereoCalibrator(Node):
+
+    def __init__(self):
+
+        super().__init__(
+            "stereo_calibrator_headless"
+        )
+
+        self.bridge = CvBridge()
+
+        self.done = False
+        self.calibrating = False
+
+        self.image_size = None
+
+        self.object_points = []
+        self.left_points = []
+        self.right_points = []
+
+        self.accepted_descriptors = []
+
+        self.last_candidate_descriptor = None
+        self.stable_counter = 0
+
+        self.last_accept_time = 0.0
+        self.last_status_time = 0.0
+
+        os.makedirs(
+            OUTPUT_DIR,
+            exist_ok=True
+        )
+
+        os.makedirs(
+            SAMPLES_DIR,
+            exist_ok=True
+        )
+
+
+        # ====================================================
+        # MODEL 3D PLANSZY
+        # ====================================================
+
+        self.object_template = np.zeros(
+            (
+                BOARD_ROWS * BOARD_COLS,
+                3
+            ),
+            np.float32
+        )
+
+        grid = np.mgrid[
+            0:BOARD_COLS,
+            0:BOARD_ROWS
+        ].T.reshape(-1, 2)
+
+        self.object_template[:, :2] = (
+            grid * SQUARE_SIZE
+        )
+
+
+        # ====================================================
+        # SUBSKRYPCJE
+        # ====================================================
+
+        self.left_sub = message_filters.Subscriber(
+            self,
+            Image,
+            LEFT_TOPIC,
+            qos_profile=qos_profile_sensor_data,
+        )
+
+        self.right_sub = message_filters.Subscriber(
+            self,
+            Image,
+            RIGHT_TOPIC,
+            qos_profile=qos_profile_sensor_data,
+        )
+
+
+        self.sync = (
+            message_filters.ApproximateTimeSynchronizer(
+                [
+                    self.left_sub,
+                    self.right_sub,
+                ],
+                queue_size=SYNC_QUEUE,
+                slop=SYNC_SLOP_SEC,
+            )
+        )
+
+        self.sync.registerCallback(
+            self.stereo_callback
+        )
+
+
+        self.get_logger().info(
+            "================================================"
+        )
+
+        self.get_logger().info(
+            "STEREO CALIBRATOR V3"
+        )
+
+        self.get_logger().info(
+            f"Plansza: "
+            f"{BOARD_COLS}x{BOARD_ROWS} "
+            f"wewnetrznych naroznikow"
+        )
+
+        self.get_logger().info(
+            f"Kwadrat: "
+            f"{SQUARE_SIZE * 1000:.1f} mm"
+        )
+
+        self.get_logger().info(
+            f"Rzeczywisty baseline: "
+            f"{EXPECTED_BASELINE_M * 1000:.1f} mm"
+        )
+
+        self.get_logger().info(
+            f"Cel: {TARGET_SAMPLES} par"
+        )
+
+        self.get_logger().info(
+            f"Minimalna powierzchnia planszy: "
+            f"{MIN_BOARD_AREA_RATIO * 100:.1f}% obrazu"
+        )
+
+        self.get_logger().info(
+            f"Max roznica timestampow ATS: "
+            f"{SYNC_SLOP_SEC * 1000:.0f} ms"
+        )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "USTAW PLANSZE -> TRZYMAJ NIERUCHOMO -> "
+            "CZEKAJ NA AKCEPTACJE"
+        )
+
+        self.get_logger().info(
+            "Po akceptacji zmien polozenie lub kat."
+        )
+
+        self.get_logger().info(
+            "Celuj glownie w 10-25% powierzchni obrazu."
+        )
+
+        self.get_logger().info(
+            "================================================"
+        )
+
+
+    # ========================================================
+    # CZAS
+    # ========================================================
+
+    def stamp_to_seconds(
+        self,
+        stamp,
+    ):
+
+        return (
+            float(stamp.sec)
+            +
+            float(stamp.nanosec) / 1e9
+        )
+
+
+    # ========================================================
+    # UJEDNOLICENIE KOLEJNOSCI NAROZNIKOW
+    # ========================================================
+
+
+    def ros_image_to_bgr(
+        self,
+        msg,
+    ):
+        if msg.encoding != "bgr8":
+            raise RuntimeError(
+                f"Nieobslugiwane encoding: {msg.encoding}"
+            )
+
+        height = int(msg.height)
+        width = int(msg.width)
+        step = int(msg.step)
+
+        expected_row_bytes = width * 3
+
+        if step < expected_row_bytes:
+            raise RuntimeError(
+                f"Niepoprawny step={step}, "
+                f"oczekiwano co najmniej "
+                f"{expected_row_bytes}"
+            )
+
+        raw = np.frombuffer(
+            msg.data,
+            dtype=np.uint8,
+        )
+
+        expected_total = (
+            step
+            *
+            height
+        )
+
+        if raw.size < expected_total:
+            raise RuntimeError(
+                f"Za malo danych: {raw.size}, "
+                f"oczekiwano {expected_total}"
+            )
+
+        rows = raw[
+            :expected_total
+        ].reshape(
+            height,
+            step,
+        )
+
+        pixels = rows[
+            :,
+            :expected_row_bytes
+        ]
+
+        image = pixels.reshape(
+            height,
+            width,
+            3,
+        )
+
+        return np.ascontiguousarray(
+            image
+        )
+
+
+
+    def canonicalize_corners(
+        self,
+        corners,
+    ):
+
+        grid = corners.reshape(
+            BOARD_ROWS,
+            BOARD_COLS,
+            2
+        ).copy()
+
+
+        first_row_y = np.mean(
+            grid[0, :, 1]
+        )
+
+        last_row_y = np.mean(
+            grid[-1, :, 1]
+        )
+
+
+        if first_row_y > last_row_y:
+
+            grid = np.flip(
+                grid,
+                axis=0
+            )
+
+
+        first_col_x = np.mean(
+            grid[:, 0, 0]
+        )
+
+        last_col_x = np.mean(
+            grid[:, -1, 0]
+        )
+
+
+        if first_col_x > last_col_x:
+
+            grid = np.flip(
+                grid,
+                axis=1
+            )
+
+
+        return grid.reshape(
+            -1,
+            1,
+            2
+        ).astype(
+            np.float32
+        )
+
+
+    # ========================================================
+    # DETEKCJA SZACHOWNICY
+    # ========================================================
+
+    def find_board(
+        self,
+        image,
+    ):
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+
+        flags = (
+            cv2.CALIB_CB_NORMALIZE_IMAGE
+            |
+            cv2.CALIB_CB_EXHAUSTIVE
+            |
+            cv2.CALIB_CB_ACCURACY
+        )
+
+
+        found, corners = (
+            cv2.findChessboardCornersSB(
+                gray,
+                (
+                    BOARD_COLS,
+                    BOARD_ROWS,
+                ),
+                flags=flags,
+            )
+        )
+
+
+        if not found:
+
+            return None
+
+
+        if corners is None:
+
+            return None
+
+
+        if len(corners) != (
+            BOARD_COLS * BOARD_ROWS
+        ):
+
+            return None
+
+
+        return self.canonicalize_corners(
+            corners
+        )
+
+
+    # ========================================================
+    # OPIS POLOZENIA PLANSZY
+    # ========================================================
+
+    def make_descriptor(
+        self,
+        corners,
+        width,
+        height,
+    ):
+
+        points = corners.reshape(
+            -1,
+            2
+        )
+
+
+        indices = [
+            0,
+            BOARD_COLS - 1,
+            (
+                (BOARD_ROWS - 1)
+                *
+                BOARD_COLS
+            ),
+            (
+                BOARD_ROWS
+                *
+                BOARD_COLS
+                -
+                1
+            ),
+        ]
+
+
+        descriptor = []
+
+
+        for index in indices:
+
+            descriptor.append(
+                float(
+                    points[index][0]
+                    /
+                    width
+                )
+            )
+
+            descriptor.append(
+                float(
+                    points[index][1]
+                    /
+                    height
+                )
+            )
+
+
+        return np.array(
+            descriptor,
+            dtype=np.float32
+        )
+
+
+    # ========================================================
+    # POLE PLANSZY
+    # ========================================================
+
+    def board_area_ratio(
+        self,
+        corners,
+        width,
+        height,
+    ):
+
+        points = corners.reshape(
+            -1,
+            2
+        )
+
+
+        indices = [
+            0,
+            BOARD_COLS - 1,
+            (
+                BOARD_ROWS
+                *
+                BOARD_COLS
+                -
+                1
+            ),
+            (
+                (BOARD_ROWS - 1)
+                *
+                BOARD_COLS
+            ),
+        ]
+
+
+        polygon = points[
+            indices
+        ].astype(
+            np.float32
+        )
+
+
+        area = abs(
+            cv2.contourArea(
+                polygon
+            )
+        )
+
+
+        image_area = float(
+            width * height
+        )
+
+
+        return area / image_area
+
+
+    # ========================================================
+    # CZY POLOZENIE JEST NOWE
+    # ========================================================
+
+    def is_diverse(
+        self,
+        descriptor,
+    ):
+
+        if not self.accepted_descriptors:
+
+            return True
+
+
+        distances = [
+            float(
+                np.linalg.norm(
+                    descriptor
+                    -
+                    old
+                )
+            )
+            for old
+            in self.accepted_descriptors
+        ]
+
+
+        return (
+            min(distances)
+            >
+            DIVERSITY_THRESHOLD
+        )
+
+
+    # ========================================================
+    # STABILNOSC PLANSZY
+    # ========================================================
+
+    def update_stability(
+        self,
+        descriptor,
+    ):
+
+        if self.last_candidate_descriptor is None:
+
+            self.last_candidate_descriptor = (
+                descriptor.copy()
+            )
+
+            self.stable_counter = 1
+
+            return False
+
+
+        difference = float(
+            np.linalg.norm(
+                descriptor
+                -
+                self.last_candidate_descriptor
+            )
+        )
+
+
+        if difference < STABILITY_THRESHOLD:
+
+            self.stable_counter += 1
+
+        else:
+
+            self.stable_counter = 1
+
+
+        self.last_candidate_descriptor = (
+            descriptor.copy()
+        )
+
+
+        return (
+            self.stable_counter
+            >=
+            STABLE_FRAMES_REQUIRED
+        )
+
+
+    def reset_stability(
+        self,
+    ):
+
+        self.last_candidate_descriptor = None
+        self.stable_counter = 0
+
+
+    # ========================================================
+    # ZAPIS DEBUGOWY
+    # ========================================================
+
+    def save_sample_images(
+        self,
+        left,
+        right,
+        left_corners,
+        right_corners,
+        number,
+    ):
+
+        left_debug = left.copy()
+        right_debug = right.copy()
+
+
+        cv2.drawChessboardCorners(
+            left_debug,
+            (
+                BOARD_COLS,
+                BOARD_ROWS,
+            ),
+            left_corners,
+            True
+        )
+
+
+        cv2.drawChessboardCorners(
+            right_debug,
+            (
+                BOARD_COLS,
+                BOARD_ROWS,
+            ),
+            right_corners,
+            True
+        )
+
+
+        cv2.imwrite(
+            os.path.join(
+                SAMPLES_DIR,
+                f"left_{number:02d}.jpg"
+            ),
+            left_debug
+        )
+
+
+        cv2.imwrite(
+            os.path.join(
+                SAMPLES_DIR,
+                f"right_{number:02d}.jpg"
+            ),
+            right_debug
+        )
+
+
+    # ========================================================
+    # CALLBACK
+    # ========================================================
+
+    def stereo_callback(
+        self,
+        left_msg,
+        right_msg,
+    ):
+
+        if self.done:
+
+            return
+
+
+        if self.calibrating:
+
+            return
+
+
+        now = time.monotonic()
+
+
+        if (
+            now
+            -
+            self.last_accept_time
+            <
+            SAMPLE_COOLDOWN_SEC
+        ):
+
+            return
+
+
+        # ====================================================
+        # KONWERSJA OBRAZOW
+        # ====================================================
+
+        try:
+
+            left = self.ros_image_to_bgr(
+                left_msg
+            )
+
+            right = self.ros_image_to_bgr(
+                right_msg
+            )
+
+        except Exception as exc:
+
+            self.get_logger().error(
+                f"cv_bridge: {exc}"
+            )
+
+            return
+
+
+        if (
+            left.shape[:2]
+            !=
+            right.shape[:2]
+        ):
+
+            self.get_logger().error(
+                "Rozne rozdzielczosci kamer."
+            )
+
+            return
+
+
+        height, width = (
+            left.shape[:2]
+        )
+
+
+        if self.image_size is None:
+
+            self.image_size = (
+                width,
+                height
+            )
+
+            self.get_logger().info(
+                f"Rozdzielczosc: "
+                f"{width}x{height}"
+            )
+
+
+        # ====================================================
+        # CZAS
+        # ====================================================
+
+        left_time = (
+            self.stamp_to_seconds(
+                left_msg.header.stamp
+            )
+        )
+
+        right_time = (
+            self.stamp_to_seconds(
+                right_msg.header.stamp
+            )
+        )
+
+
+        time_difference = abs(
+            left_time
+            -
+            right_time
+        )
+
+
+        # Dodatkowe reczne zabezpieczenie.
+        if time_difference > SYNC_SLOP_SEC:
+
+            self.reset_stability()
+
+            if (
+                now
+                -
+                self.last_status_time
+                >
+                1.5
+            ):
+
+                self.get_logger().info(
+                    f"Odrzucam pare: "
+                    f"dt={time_difference * 1000:.1f} ms"
+                )
+
+                self.last_status_time = now
+
+            return
+
+
+        # ====================================================
+        # NAROZNIKI
+        # ====================================================
+
+        left_corners = self.find_board(
+            left
+        )
+
+        right_corners = self.find_board(
+            right
+        )
+
+
+        if (
+            left_corners is None
+            or
+            right_corners is None
+        ):
+
+            self.reset_stability()
+
+
+            if (
+                now
+                -
+                self.last_status_time
+                >
+                2.0
+            ):
+
+                self.get_logger().info(
+                    f"Szukam planszy... "
+                    f"{len(self.object_points)}/"
+                    f"{TARGET_SAMPLES}"
+                )
+
+                self.last_status_time = now
+
+
+            return
+
+
+        # ====================================================
+        # WIELKOSC PLANSZY
+        # ====================================================
+
+        left_area = self.board_area_ratio(
+            left_corners,
+            width,
+            height,
+        )
+
+        right_area = self.board_area_ratio(
+            right_corners,
+            width,
+            height,
+        )
+
+
+        if (
+            left_area < MIN_BOARD_AREA_RATIO
+            or
+            right_area < MIN_BOARD_AREA_RATIO
+        ):
+
+            self.reset_stability()
+
+
+            if (
+                now
+                -
+                self.last_status_time
+                >
+                1.5
+            ):
+
+                self.get_logger().info(
+                    f"Plansza za mala: "
+                    f"L={left_area * 100:.1f}% "
+                    f"R={right_area * 100:.1f}%. "
+                    f"Podejdz blizej."
+                )
+
+                self.last_status_time = now
+
+
+            return
+
+
+        if (
+            left_area > MAX_BOARD_AREA_RATIO
+            or
+            right_area > MAX_BOARD_AREA_RATIO
+        ):
+
+            self.reset_stability()
+
+
+            if (
+                now
+                -
+                self.last_status_time
+                >
+                1.5
+            ):
+
+                self.get_logger().info(
+                    "Plansza za duza w obrazie. "
+                    "Odsun ja."
+                )
+
+                self.last_status_time = now
+
+
+            return
+
+
+        # ====================================================
+        # DESCRIPTOR
+        # ====================================================
+
+        left_descriptor = self.make_descriptor(
+            left_corners,
+            width,
+            height,
+        )
+
+        right_descriptor = self.make_descriptor(
+            right_corners,
+            width,
+            height,
+        )
+
+
+        descriptor = (
+            left_descriptor
+            +
+            right_descriptor
+        ) / 2.0
+
+
+        # ====================================================
+        # STABILNOSC
+        # ====================================================
+
+        stable = self.update_stability(
+            descriptor
+        )
+
+
+        if not stable:
+
+            if (
+                now
+                -
+                self.last_status_time
+                >
+                1.0
+            ):
+
+                self.get_logger().info(
+                    f"Plansza wykryta. "
+                    f"TRZYMAJ NIERUCHOMO... "
+                    f"{self.stable_counter}/"
+                    f"{STABLE_FRAMES_REQUIRED}"
+                )
+
+                self.last_status_time = now
+
+
+            return
+
+
+        # ====================================================
+        # ROZNORODNOSC
+        # ====================================================
+
+        if not self.is_diverse(
+            descriptor
+        ):
+
+            self.reset_stability()
+
+
+            if (
+                now
+                -
+                self.last_status_time
+                >
+                1.0
+            ):
+
+                self.get_logger().info(
+                    "Pozycja za podobna. "
+                    "PRZESUN / PRZECHYL / ODDAL plansze."
+                )
+
+                self.last_status_time = now
+
+
+            return
+
+
+        # ====================================================
+        # AKCEPTACJA
+        # ====================================================
+
+        self.object_points.append(
+            self.object_template.copy()
+        )
+
+        self.left_points.append(
+            left_corners.copy()
+        )
+
+        self.right_points.append(
+            right_corners.copy()
+        )
+
+        self.accepted_descriptors.append(
+            descriptor.copy()
+        )
+
+
+        sample_number = len(
+            self.object_points
+        )
+
+
+        self.save_sample_images(
+            left,
+            right,
+            left_corners,
+            right_corners,
+            sample_number,
+        )
+
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "================================================"
+        )
+
+        self.get_logger().info(
+            f"PARA ZAAKCEPTOWANA: "
+            f"{sample_number}/{TARGET_SAMPLES}"
+        )
+
+        self.get_logger().info(
+            f"Roznica czasu kamer: "
+            f"{time_difference * 1000:.2f} ms"
+        )
+
+        self.get_logger().info(
+            f"Plansza zajmuje: "
+            f"L={left_area * 100:.1f}% "
+            f"R={right_area * 100:.1f}% obrazu"
+        )
+
+        self.get_logger().info(
+            "TERAZ ZMIEN POZYCJE / KAT / ODLEGLOSC"
+        )
+
+        self.get_logger().info(
+            "================================================"
+        )
+
+
+        self.last_accept_time = (
+            time.monotonic()
+        )
+
+        self.reset_stability()
+
+
+        if sample_number >= TARGET_SAMPLES:
+
+            self.calibrating = True
+
+            self.perform_calibration()
+
+
+    # ========================================================
+    # KALIBRACJA POJEDYNCZEJ KAMERY
+    #
+    # V3:
+    # - fx = fy
+    # - principal point w centrum
+    # - p1 = p2 = 0
+    # - k3 = 0
+    #
+    # Dzięki temu solver nie moze "uciec" w absurdalne
+    # parametry jak poprzednio.
+    # ========================================================
+
+    def calibrate_single_camera(
+        self,
+        image_points,
+    ):
+
+        width, height = (
+            self.image_size
+        )
+
+
+        camera_matrix = (
+            cv2.initCameraMatrix2D(
+                self.object_points,
+                image_points,
+                self.image_size,
+                aspectRatio=1.0,
+            )
+        )
+
+
+        # Principal point:
+        camera_matrix[0, 2] = (
+            width - 1
+        ) / 2.0
+
+        camera_matrix[1, 2] = (
+            height - 1
+        ) / 2.0
+
+
+        # Kwadratowe piksele:
+        focal = float(
+            (
+                camera_matrix[0, 0]
+                +
+                camera_matrix[1, 1]
+            )
+            /
+            2.0
+        )
+
+        camera_matrix[0, 0] = focal
+        camera_matrix[1, 1] = focal
+
+
+        distortion = np.zeros(
+            (
+                5,
+                1
+            ),
+            dtype=np.float64,
+        )
+
+
+        flags = (
+            cv2.CALIB_USE_INTRINSIC_GUESS
+            |
+            cv2.CALIB_FIX_ASPECT_RATIO
+            |
+            cv2.CALIB_FIX_PRINCIPAL_POINT
+            |
+            cv2.CALIB_ZERO_TANGENT_DIST
+            |
+            cv2.CALIB_FIX_K3
+        )
+
+
+        criteria = (
+            cv2.TERM_CRITERIA_EPS
+            |
+            cv2.TERM_CRITERIA_MAX_ITER,
+            200,
+            1e-9,
+        )
+
+
+        return cv2.calibrateCamera(
+            self.object_points,
+            image_points,
+            self.image_size,
+            camera_matrix,
+            distortion,
+            flags=flags,
+            criteria=criteria,
+        )
+
+
+    # ========================================================
+    # YAML CAMERA_INFO
+    # ========================================================
+
+    def write_camera_yaml(
+        self,
+        path,
+        camera_name,
+        camera_matrix,
+        distortion,
+        rectification,
+        projection,
+    ):
+
+        data = {
+            "image_width":
+                int(
+                    self.image_size[0]
+                ),
+
+            "image_height":
+                int(
+                    self.image_size[1]
+                ),
+
+            "camera_name":
+                camera_name,
+
+            "camera_matrix": {
+                "rows": 3,
+                "cols": 3,
+                "data":
+                    camera_matrix
+                    .reshape(-1)
+                    .astype(float)
+                    .tolist(),
+            },
+
+            "distortion_model":
+                "plumb_bob",
+
+            "distortion_coefficients": {
+                "rows": 1,
+                "cols":
+                    int(
+                        distortion.size
+                    ),
+
+                "data":
+                    distortion
+                    .reshape(-1)
+                    .astype(float)
+                    .tolist(),
+            },
+
+            "rectification_matrix": {
+                "rows": 3,
+                "cols": 3,
+                "data":
+                    rectification
+                    .reshape(-1)
+                    .astype(float)
+                    .tolist(),
+            },
+
+            "projection_matrix": {
+                "rows": 3,
+                "cols": 4,
+                "data":
+                    projection
+                    .reshape(-1)
+                    .astype(float)
+                    .tolist(),
+            },
+        }
+
+
+        with open(
+            path,
+            "w"
+        ) as file:
+
+            yaml.safe_dump(
+                data,
+                file,
+                sort_keys=False
+            )
+
+
+    # ========================================================
+    # GLOWNA KALIBRACJA
+    # ========================================================
+
+    def perform_calibration(
+        self,
+    ):
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "###############################################"
+        )
+
+        self.get_logger().info(
+            "LICZE KALIBRACJE V3..."
+        )
+
+        self.get_logger().info(
+            "###############################################"
+        )
+
+
+        # ====================================================
+        # LEFT
+        # ====================================================
+
+        (
+            left_rms,
+            left_k,
+            left_d,
+            left_rvecs,
+            left_tvecs,
+        ) = self.calibrate_single_camera(
+            self.left_points
+        )
+
+
+        # ====================================================
+        # RIGHT
+        # ====================================================
+
+        (
+            right_rms,
+            right_k,
+            right_d,
+            right_rvecs,
+            right_tvecs,
+        ) = self.calibrate_single_camera(
+            self.right_points
+        )
+
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "INTRINSICS LEFT:"
+        )
+
+        self.get_logger().info(
+            f"fx={left_k[0, 0]:.3f} "
+            f"fy={left_k[1, 1]:.3f} "
+            f"cx={left_k[0, 2]:.3f} "
+            f"cy={left_k[1, 2]:.3f}"
+        )
+
+        self.get_logger().info(
+            f"D LEFT: "
+            f"{left_d.reshape(-1)}"
+        )
+
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "INTRINSICS RIGHT:"
+        )
+
+        self.get_logger().info(
+            f"fx={right_k[0, 0]:.3f} "
+            f"fy={right_k[1, 1]:.3f} "
+            f"cx={right_k[0, 2]:.3f} "
+            f"cy={right_k[1, 2]:.3f}"
+        )
+
+        self.get_logger().info(
+            f"D RIGHT: "
+            f"{right_d.reshape(-1)}"
+        )
+
+
+        # ====================================================
+        # STEREO
+        # ====================================================
+
+        (
+            stereo_rms,
+            left_k,
+            left_d,
+            right_k,
+            right_d,
+            rotation,
+            translation,
+            essential,
+            fundamental,
+        ) = cv2.stereoCalibrate(
+            self.object_points,
+            self.left_points,
+            self.right_points,
+
+            left_k,
+            left_d,
+
+            right_k,
+            right_d,
+
+            self.image_size,
+
+            criteria=(
+                cv2.TERM_CRITERIA_EPS
+                |
+                cv2.TERM_CRITERIA_MAX_ITER,
+                200,
+                1e-8,
+            ),
+
+            flags=cv2.CALIB_FIX_INTRINSIC,
+        )
+
+
+        # ====================================================
+        # RECTIFICATION
+        # ====================================================
+
+        (
+            left_r,
+            right_r,
+            left_p,
+            right_p,
+            q_matrix,
+            left_roi,
+            right_roi,
+        ) = cv2.stereoRectify(
+            left_k,
+            left_d,
+
+            right_k,
+            right_d,
+
+            self.image_size,
+
+            rotation,
+            translation,
+
+            flags=cv2.CALIB_ZERO_DISPARITY,
+
+            alpha=0,
+        )
+
+
+        # ====================================================
+        # BASELINE
+        # ====================================================
+
+        baseline = float(
+            np.linalg.norm(
+                translation
+            )
+        )
+
+
+        baseline_error = abs(
+            baseline
+            -
+            EXPECTED_BASELINE_M
+        )
+
+
+        tx = float(
+            translation[0, 0]
+        )
+
+        ty = float(
+            translation[1, 0]
+        )
+
+        tz = float(
+            translation[2, 0]
+        )
+
+
+        # ====================================================
+        # ZAPIS
+        # ====================================================
+
+        left_yaml = os.path.join(
+            OUTPUT_DIR,
+            "left.yaml"
+        )
+
+        right_yaml = os.path.join(
+            OUTPUT_DIR,
+            "right.yaml"
+        )
+
+        stereo_yaml = os.path.join(
+            OUTPUT_DIR,
+            "stereo.yaml"
+        )
+
+
+        self.write_camera_yaml(
+            left_yaml,
+            "left_camera",
+            left_k,
+            left_d,
+            left_r,
+            left_p,
+        )
+
+
+        self.write_camera_yaml(
+            right_yaml,
+            "right_camera",
+            right_k,
+            right_d,
+            right_r,
+            right_p,
+        )
+
+
+        stereo_data = {
+
+            "image_width":
+                int(
+                    self.image_size[0]
+                ),
+
+            "image_height":
+                int(
+                    self.image_size[1]
+                ),
+
+            "board_inner_corners": [
+                BOARD_COLS,
+                BOARD_ROWS,
+            ],
+
+            "square_size_m":
+                SQUARE_SIZE,
+
+            "samples":
+                len(
+                    self.object_points
+                ),
+
+            "left_rms":
+                float(
+                    left_rms
+                ),
+
+            "right_rms":
+                float(
+                    right_rms
+                ),
+
+            "stereo_rms":
+                float(
+                    stereo_rms
+                ),
+
+            "measured_baseline_m":
+                EXPECTED_BASELINE_M,
+
+            "calculated_baseline_m":
+                baseline,
+
+            "baseline_error_m":
+                baseline_error,
+
+            "translation_x_m":
+                tx,
+
+            "translation_y_m":
+                ty,
+
+            "translation_z_m":
+                tz,
+
+            "rotation": {
+                "rows": 3,
+                "cols": 3,
+                "data":
+                    rotation
+                    .reshape(-1)
+                    .astype(float)
+                    .tolist(),
+            },
+
+            "translation_m": {
+                "rows": 3,
+                "cols": 1,
+                "data":
+                    translation
+                    .reshape(-1)
+                    .astype(float)
+                    .tolist(),
+            },
+
+            "essential_matrix": {
+                "rows": 3,
+                "cols": 3,
+                "data":
+                    essential
+                    .reshape(-1)
+                    .astype(float)
+                    .tolist(),
+            },
+
+            "fundamental_matrix": {
+                "rows": 3,
+                "cols": 3,
+                "data":
+                    fundamental
+                    .reshape(-1)
+                    .astype(float)
+                    .tolist(),
+            },
+
+            "Q": {
+                "rows": 4,
+                "cols": 4,
+                "data":
+                    q_matrix
+                    .reshape(-1)
+                    .astype(float)
+                    .tolist(),
+            },
+        }
+
+
+        with open(
+            stereo_yaml,
+            "w"
+        ) as file:
+
+            yaml.safe_dump(
+                stereo_data,
+                file,
+                sort_keys=False
+            )
+
+
+        # ====================================================
+        # OCENA
+        # ====================================================
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "###############################################"
+        )
+
+        self.get_logger().info(
+            "KALIBRACJA V3 GOTOWA"
+        )
+
+        self.get_logger().info(
+            "###############################################"
+        )
+
+
+        self.get_logger().info(
+            f"LEFT RMS:   "
+            f"{left_rms:.5f} px"
+        )
+
+        self.get_logger().info(
+            f"RIGHT RMS:  "
+            f"{right_rms:.5f} px"
+        )
+
+        self.get_logger().info(
+            f"STEREO RMS: "
+            f"{stereo_rms:.5f} px"
+        )
+
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            f"LEFT fx/fy: "
+            f"{left_k[0, 0]:.2f} / "
+            f"{left_k[1, 1]:.2f}"
+        )
+
+        self.get_logger().info(
+            f"LEFT cx/cy: "
+            f"{left_k[0, 2]:.2f} / "
+            f"{left_k[1, 2]:.2f}"
+        )
+
+
+        self.get_logger().info(
+            f"RIGHT fx/fy: "
+            f"{right_k[0, 0]:.2f} / "
+            f"{right_k[1, 1]:.2f}"
+        )
+
+        self.get_logger().info(
+            f"RIGHT cx/cy: "
+            f"{right_k[0, 2]:.2f} / "
+            f"{right_k[1, 2]:.2f}"
+        )
+
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            f"TRANSLACJA: "
+            f"X={tx * 1000:.2f} mm "
+            f"Y={ty * 1000:.2f} mm "
+            f"Z={tz * 1000:.2f} mm"
+        )
+
+
+        self.get_logger().info(
+            f"BASELINE RZECZYWISTY: "
+            f"{EXPECTED_BASELINE_M * 1000:.2f} mm"
+        )
+
+        self.get_logger().info(
+            f"BASELINE Z KALIBRACJI: "
+            f"{baseline * 1000:.2f} mm"
+        )
+
+        self.get_logger().info(
+            f"BLAD BASELINE: "
+            f"{baseline_error * 1000:.2f} mm"
+        )
+
+
+        if (
+            baseline_error
+            <=
+            BASELINE_WARNING_TOLERANCE_M
+        ):
+
+            self.get_logger().info(
+                "BASELINE: OK"
+            )
+
+        else:
+
+            self.get_logger().warn(
+                "BASELINE: PODEJRZANY"
+            )
+
+
+        if stereo_rms < 1.5:
+
+            self.get_logger().info(
+                "STEREO RMS: BARDZO DOBRY"
+            )
+
+        elif stereo_rms < 2.5:
+
+            self.get_logger().info(
+                "STEREO RMS: DOBRY / AKCEPTOWALNY"
+            )
+
+        elif stereo_rms < 4.0:
+
+            self.get_logger().warn(
+                "STEREO RMS: SREDNI"
+            )
+
+        else:
+
+            self.get_logger().error(
+                "STEREO RMS: ZA DUZY"
+            )
+
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            f"LEFT:   {left_yaml}"
+        )
+
+        self.get_logger().info(
+            f"RIGHT:  {right_yaml}"
+        )
+
+        self.get_logger().info(
+            f"STEREO: {stereo_yaml}"
+        )
+
+        self.get_logger().info(
+            f"PROBKI: {SAMPLES_DIR}"
+        )
+
+        self.get_logger().info(
+            "###############################################"
+        )
+
+
+        self.done = True
+
+
+def main(
+    args=None,
+):
+
+    rclpy.init(
+        args=args
+    )
+
+    node = StereoCalibrator()
+
+
+    try:
+
+        while (
+            rclpy.ok()
+            and
+            not node.done
+        ):
+
+            rclpy.spin_once(
+                node,
+                timeout_sec=0.1
+            )
+
+
+    except KeyboardInterrupt:
+
+        node.get_logger().info(
+            "Kalibracja przerwana."
+        )
+
+
+    finally:
+
+        node.destroy_node()
+
+        if rclpy.ok():
+
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+
+    main()
+============================================================
+FILE: src/camera_bridge/camera_bridge/stereo_extrinsic_calibrator.py
+============================================================
+import math
+from collections import deque
+
+import numpy as np
+
+import rclpy
+
+from rclpy.node import Node
+
+from geometry_msgs.msg import PointStamped
+from std_msgs.msg import String
+
+import tf2_ros
+
+
+# ============================================================
+# TOPICS
+# ============================================================
+
+CAMERA_POINT_TOPIC = (
+    "/ai_cube/position_camera"
+)
+
+COMMAND_TOPIC = (
+    "/stereo_calibration/command"
+)
+
+
+# ============================================================
+# FRAMES
+# ============================================================
+
+BASE_FRAME = "base_link"
+TOOL_FRAME = "tool0"
+
+
+# ============================================================
+# FILTERING
+# ============================================================
+
+CAMERA_BUFFER_SIZE = 30
+
+MIN_CAMERA_SAMPLES = 10
+
+MAX_CAMERA_SPREAD_M = 0.015
+
+
+class StereoExtrinsicCalibrator(Node):
+
+    def __init__(self):
+
+        super().__init__(
+            "stereo_extrinsic_calibrator"
+        )
+
+        # ====================================================
+        # TF
+        # ====================================================
+
+        self.tf_buffer = (
+            tf2_ros.Buffer()
+        )
+
+        self.tf_listener = (
+            tf2_ros.TransformListener(
+                self.tf_buffer,
+                self,
+            )
+        )
+
+        # ====================================================
+        # CAMERA BUFFER
+        # ====================================================
+
+        self.camera_buffer = deque(
+            maxlen=CAMERA_BUFFER_SIZE
+        )
+
+        # ====================================================
+        # CALIBRATION PAIRS
+        # ====================================================
+
+        self.camera_samples = []
+        self.base_samples = []
+
+        # Temporary tool point waiting for matching camera point.
+        self.pending_tool_point = None
+
+        # ====================================================
+        # SUBSCRIBERS
+        # ====================================================
+
+        self.create_subscription(
+            PointStamped,
+            CAMERA_POINT_TOPIC,
+            self.camera_callback,
+            10,
+        )
+
+        self.create_subscription(
+            String,
+            COMMAND_TOPIC,
+            self.command_callback,
+            10,
+        )
+
+        # ====================================================
+        # START INFO
+        # ====================================================
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        self.get_logger().info(
+            "STEREO EXTRINSIC CALIBRATOR - AI"
+        )
+
+        self.get_logger().info(
+            "Kamera podczas kalibracji:"
+        )
+
+        self.get_logger().info(
+            "SERVO_1 = 155 deg"
+        )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "Procedura jednej probki:"
+        )
+
+        self.get_logger().info(
+            "1. Kostka w chwytaku"
+        )
+
+        self.get_logger().info(
+            "2. capture_tool"
+        )
+
+        self.get_logger().info(
+            "3. NIE RUSZAJ KOSTKI"
+        )
+
+        self.get_logger().info(
+            "4. Odsun manipulator"
+        )
+
+        self.get_logger().info(
+            "5. Poczekaj 2-3 sekundy"
+        )
+
+        self.get_logger().info(
+            "6. capture_camera"
+        )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "Komendy:"
+        )
+
+        self.get_logger().info(
+            "capture_tool"
+        )
+
+        self.get_logger().info(
+            "capture_camera"
+        )
+
+        self.get_logger().info(
+            "list"
+        )
+
+        self.get_logger().info(
+            "solve"
+        )
+
+        self.get_logger().info(
+            "clear"
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+
+    # ========================================================
+    # AI CAMERA POINT
+    # ========================================================
+
+    def camera_callback(
+        self,
+        msg,
+    ):
+
+        point = np.array(
+            [
+                msg.point.x,
+                msg.point.y,
+                msg.point.z,
+            ],
+            dtype=np.float64,
+        )
+
+        if not np.all(
+            np.isfinite(
+                point
+            )
+        ):
+
+            return
+
+        if (
+            point[2] < 0.10
+            or
+            point[2] > 2.00
+        ):
+
+            return
+
+        self.camera_buffer.append(
+            point
+        )
+
+
+    # ========================================================
+    # TOOL POSITION
+    # ========================================================
+
+    def get_tool_position(
+        self,
+    ):
+
+        try:
+
+            transform = (
+                self.tf_buffer
+                .lookup_transform(
+                    BASE_FRAME,
+                    TOOL_FRAME,
+                    rclpy.time.Time(),
+                )
+            )
+
+        except Exception as exc:
+
+            self.get_logger().error(
+                f"Brak TF "
+                f"{BASE_FRAME}->{TOOL_FRAME}: "
+                f"{exc}"
+            )
+
+            return None
+
+        t = (
+            transform
+            .transform
+            .translation
+        )
+
+        return np.array(
+            [
+                t.x,
+                t.y,
+                t.z,
+            ],
+            dtype=np.float64,
+        )
+
+
+    # ========================================================
+    # STABLE AI POINT
+    # ========================================================
+
+    def get_stable_camera_point(
+        self,
+    ):
+
+        if (
+            len(
+                self.camera_buffer
+            )
+            <
+            MIN_CAMERA_SAMPLES
+        ):
+
+            self.get_logger().error(
+                "Za malo pomiarow AI. "
+                "Poczekaj 2-3 sekundy."
+            )
+
+            return None
+
+        points = np.array(
+            self.camera_buffer,
+            dtype=np.float64,
+        )
+
+        median = np.median(
+            points,
+            axis=0,
+        )
+
+        distances = np.linalg.norm(
+            points
+            -
+            median,
+            axis=1,
+        )
+
+        threshold = np.percentile(
+            distances,
+            70,
+        )
+
+        filtered = points[
+            distances
+            <=
+            threshold
+        ]
+
+        if (
+            filtered.shape[0]
+            <
+            6
+        ):
+
+            self.get_logger().error(
+                "Za malo stabilnych pomiarow AI."
+            )
+
+            return None
+
+        final_point = np.median(
+            filtered,
+            axis=0,
+        )
+
+        minimum = np.min(
+            filtered,
+            axis=0,
+        )
+
+        maximum = np.max(
+            filtered,
+            axis=0,
+        )
+
+        spread = (
+            maximum
+            -
+            minimum
+        )
+
+        self.get_logger().info(
+            "Stabilnosc AI:"
+        )
+
+        self.get_logger().info(
+            f"X spread = "
+            f"{spread[0] * 1000.0:.1f} mm"
+        )
+
+        self.get_logger().info(
+            f"Y spread = "
+            f"{spread[1] * 1000.0:.1f} mm"
+        )
+
+        self.get_logger().info(
+            f"Z spread = "
+            f"{spread[2] * 1000.0:.1f} mm"
+        )
+
+        if (
+            np.max(
+                spread
+            )
+            >
+            MAX_CAMERA_SPREAD_M
+        ):
+
+            self.get_logger().error(
+                "AI jest zbyt niestabilne. "
+                "Nie zapisuje punktu."
+            )
+
+            return None
+
+        return final_point
+
+
+    # ========================================================
+    # COMMANDS
+    # ========================================================
+
+    def command_callback(
+        self,
+        msg,
+    ):
+
+        command = (
+            msg.data
+            .strip()
+            .lower()
+        )
+
+        if command == "capture_tool":
+
+            self.capture_tool()
+
+        elif command == "capture_camera":
+
+            self.capture_camera()
+
+        elif command == "list":
+
+            self.list_samples()
+
+        elif command == "solve":
+
+            self.solve()
+
+        elif command == "clear":
+
+            self.clear()
+
+        else:
+
+            self.get_logger().warn(
+                f"Nieznana komenda: {command}"
+            )
+
+
+    # ========================================================
+    # CAPTURE TOOL
+    # ========================================================
+
+    def capture_tool(
+        self,
+    ):
+
+        tool = (
+            self.get_tool_position()
+        )
+
+        if tool is None:
+
+            return
+
+        self.pending_tool_point = (
+            tool.copy()
+        )
+
+        self.camera_buffer.clear()
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        self.get_logger().info(
+            "TOOL ZAPISANY"
+        )
+
+        self.get_logger().info(
+            f"X = {tool[0]:+.4f}"
+        )
+
+        self.get_logger().info(
+            f"Y = {tool[1]:+.4f}"
+        )
+
+        self.get_logger().info(
+            f"Z = {tool[2]:+.4f}"
+        )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "TERAZ:"
+        )
+
+        self.get_logger().info(
+            "NIE RUSZAJ KOSTKI."
+        )
+
+        self.get_logger().info(
+            "Odsun manipulator."
+        )
+
+        self.get_logger().info(
+            "Poczekaj 2-3 sekundy."
+        )
+
+        self.get_logger().info(
+            "Potem capture_camera."
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+
+    # ========================================================
+    # CAPTURE CAMERA
+    # ========================================================
+
+    def capture_camera(
+        self,
+    ):
+
+        if (
+            self.pending_tool_point
+            is None
+        ):
+
+            self.get_logger().error(
+                "Najpierw wykonaj capture_tool."
+            )
+
+            return
+
+        camera = (
+            self.get_stable_camera_point()
+        )
+
+        if camera is None:
+
+            return
+
+        self.base_samples.append(
+            self.pending_tool_point.copy()
+        )
+
+        self.camera_samples.append(
+            camera.copy()
+        )
+
+        number = len(
+            self.camera_samples
+        )
+
+        tool = (
+            self.pending_tool_point.copy()
+        )
+
+        self.pending_tool_point = None
+
+        self.camera_buffer.clear()
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        self.get_logger().info(
+            f"PROBKA {number} GOTOWA"
+        )
+
+        self.get_logger().info(
+            "CAMERA:"
+        )
+
+        self.get_logger().info(
+            f"{camera[0]:+.5f} "
+            f"{camera[1]:+.5f} "
+            f"{camera[2]:+.5f}"
+        )
+
+        self.get_logger().info(
+            "BASE / TOOL0:"
+        )
+
+        self.get_logger().info(
+            f"{tool[0]:+.5f} "
+            f"{tool[1]:+.5f} "
+            f"{tool[2]:+.5f}"
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+
+    # ========================================================
+    # CLEAR
+    # ========================================================
+
+    def clear(
+        self,
+    ):
+
+        self.camera_samples.clear()
+        self.base_samples.clear()
+
+        self.camera_buffer.clear()
+
+        self.pending_tool_point = None
+
+        self.get_logger().info(
+            "Wyczyszczono wszystkie probki."
+        )
+
+
+    # ========================================================
+    # LIST
+    # ========================================================
+
+    def list_samples(
+        self,
+    ):
+
+        count = len(
+            self.camera_samples
+        )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            f"Liczba gotowych probek: {count}"
+        )
+
+        for index in range(
+            count
+        ):
+
+            camera = (
+                self.camera_samples[
+                    index
+                ]
+            )
+
+            base = (
+                self.base_samples[
+                    index
+                ]
+            )
+
+            self.get_logger().info(
+                f"{index + 1}: "
+                f"C=["
+                f"{camera[0]:+.4f}, "
+                f"{camera[1]:+.4f}, "
+                f"{camera[2]:+.4f}] "
+                f"B=["
+                f"{base[0]:+.4f}, "
+                f"{base[1]:+.4f}, "
+                f"{base[2]:+.4f}]"
+            )
+
+
+    # ========================================================
+    # ROTATION -> RPY
+    # ========================================================
+
+    @staticmethod
+    def rotation_to_rpy(
+        rotation,
+    ):
+
+        sy = math.sqrt(
+            rotation[0, 0] ** 2
+            +
+            rotation[1, 0] ** 2
+        )
+
+        singular = (
+            sy < 1e-6
+        )
+
+        if not singular:
+
+            roll = math.atan2(
+                rotation[2, 1],
+                rotation[2, 2],
+            )
+
+            pitch = math.atan2(
+                -rotation[2, 0],
+                sy,
+            )
+
+            yaw = math.atan2(
+                rotation[1, 0],
+                rotation[0, 0],
+            )
+
+        else:
+
+            roll = math.atan2(
+                -rotation[1, 2],
+                rotation[1, 1],
+            )
+
+            pitch = math.atan2(
+                -rotation[2, 0],
+                sy,
+            )
+
+            yaw = 0.0
+
+        return (
+            roll,
+            pitch,
+            yaw,
+        )
+
+
+    # ========================================================
+    # SOLVE
+    # ========================================================
+
+    def solve(
+        self,
+    ):
+
+        count = len(
+            self.camera_samples
+        )
+
+        if count < 5:
+
+            self.get_logger().error(
+                "Potrzeba minimum 5 gotowych probek. "
+                "Najlepiej 6-8."
+            )
+
+            return
+
+        camera = np.array(
+            self.camera_samples,
+            dtype=np.float64,
+        )
+
+        base = np.array(
+            self.base_samples,
+            dtype=np.float64,
+        )
+
+        camera_center = np.mean(
+            camera,
+            axis=0,
+        )
+
+        base_center = np.mean(
+            base,
+            axis=0,
+        )
+
+        camera_zero = (
+            camera
+            -
+            camera_center
+        )
+
+        base_zero = (
+            base
+            -
+            base_center
+        )
+
+        covariance = (
+            camera_zero.T
+            @
+            base_zero
+        )
+
+        u, _, vt = np.linalg.svd(
+            covariance
+        )
+
+        rotation = (
+            vt.T
+            @
+            u.T
+        )
+
+        if (
+            np.linalg.det(
+                rotation
+            )
+            <
+            0.0
+        ):
+
+            vt[
+                -1,
+                :
+            ] *= -1.0
+
+            rotation = (
+                vt.T
+                @
+                u.T
+            )
+
+        translation = (
+            base_center
+            -
+            rotation
+            @
+            camera_center
+        )
+
+        predicted = (
+            (
+                rotation
+                @
+                camera.T
+            ).T
+            +
+            translation
+        )
+
+        errors = np.linalg.norm(
+            predicted
+            -
+            base,
+            axis=1,
+        )
+
+        rms = math.sqrt(
+            float(
+                np.mean(
+                    errors ** 2
+                )
+            )
+        )
+
+        maximum = float(
+            np.max(
+                errors
+            )
+        )
+
+        roll, pitch, yaw = (
+            self.rotation_to_rpy(
+                rotation
+            )
+        )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        self.get_logger().info(
+            "WYNIK KALIBRACJI AI"
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+        for index, error in enumerate(
+            errors
+        ):
+
+            self.get_logger().info(
+                f"Probka {index + 1}: "
+                f"{error * 1000.0:.2f} mm"
+            )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "TRANSLATION [m]:"
+        )
+
+        self.get_logger().info(
+            f"x = {translation[0]:+.8f}"
+        )
+
+        self.get_logger().info(
+            f"y = {translation[1]:+.8f}"
+        )
+
+        self.get_logger().info(
+            f"z = {translation[2]:+.8f}"
+        )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "RPY [rad]:"
+        )
+
+        self.get_logger().info(
+            f"roll  = {roll:+.8f}"
+        )
+
+        self.get_logger().info(
+            f"pitch = {pitch:+.8f}"
+        )
+
+        self.get_logger().info(
+            f"yaw   = {yaw:+.8f}"
+        )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "RPY [deg]:"
+        )
+
+        self.get_logger().info(
+            f"roll  = "
+            f"{math.degrees(roll):+.3f}"
+        )
+
+        self.get_logger().info(
+            f"pitch = "
+            f"{math.degrees(pitch):+.3f}"
+        )
+
+        self.get_logger().info(
+            f"yaw   = "
+            f"{math.degrees(yaw):+.3f}"
+        )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            f"RMS = "
+            f"{rms * 1000.0:.2f} mm"
+        )
+
+        self.get_logger().info(
+            f"MAX = "
+            f"{maximum * 1000.0:.2f} mm"
+        )
+
+        self.get_logger().info(
+            ""
+        )
+
+        self.get_logger().info(
+            "URDF:"
+        )
+
+        self.get_logger().info(
+            '<origin '
+            f'xyz="'
+            f'{translation[0]:.8f} '
+            f'{translation[1]:.8f} '
+            f'{translation[2]:.8f}" '
+            f'rpy="'
+            f'{roll:.8f} '
+            f'{pitch:.8f} '
+            f'{yaw:.8f}"'
+            '/>'
+        )
+
+        self.get_logger().info(
+            "=========================================="
+        )
+
+
+def main(
+    args=None,
+):
+
+    rclpy.init(
+        args=args
+    )
+
+    node = (
+        StereoExtrinsicCalibrator()
+    )
+
+    try:
+
+        rclpy.spin(
+            node
+        )
+
+    except KeyboardInterrupt:
+
+        pass
+
+    finally:
+
+        node.destroy_node()
+
+        if rclpy.ok():
+
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+
+    main()
+============================================================
+FILE: src/camera_bridge/launch/stereo_cameras.launch.py
+============================================================
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+
+    left_camera = Node(
+        package="camera_ros",
+        executable="camera_node",
+        name="left_camera",
+        namespace="camera_left",
+        output="screen",
+        parameters=[
+            {
+                "camera":
+                    "/base/axi/pcie@120000/rp1/i2c@80000/imx708@1a",
+
+                "role": "video",
+                "format": "RGB888",
+
+                "width": 480,
+                "height": 270,
+
+                "FrameDurationLimits": [
+                    200000,
+                    200000,
+                ],
+
+                "frame_id": "camera_left_optical_frame",
+            }
+        ],
+    )
+
+
+    right_camera = Node(
+        package="camera_ros",
+        executable="camera_node",
+        name="right_camera",
+        namespace="camera_right",
+        output="screen",
+        parameters=[
+            {
+                "camera":
+                    "/base/axi/pcie@120000/rp1/i2c@88000/imx708@1a",
+
+                "role": "video",
+                "format": "RGB888",
+
+                "width": 480,
+                "height": 270,
+
+                "FrameDurationLimits": [
+                    200000,
+                    200000,
+                ],
+
+                "frame_id": "camera_right_optical_frame",
+            }
+        ],
+    )
+
+
+    return LaunchDescription([
+        left_camera,
+        right_camera,
+    ])
+
+============================================================
+FILE: src/camera_bridge/setup.py
+============================================================
+import os
+from glob import glob
+from setuptools import find_packages, setup
+
+package_name = 'camera_bridge'
+
+setup(
+    name=package_name,
+    version='0.0.0',
+    packages=find_packages(exclude=['test']),
+    data_files=[
+        ('share/ament_index/resource_index/packages', ['resource/camera_bridge']),
+        ('share/camera_bridge', ['package.xml']),
+        (os.path.join('share', 'camera_bridge', 'launch'), glob(os.path.join('launch', '*.launch.py'))),
+    ],
+    install_requires=['setuptools'],
+    zip_safe=True,
+    maintainer='marek',
+    maintainer_email='marek@todo.todo',
+    description='TODO: Package description',
+    license='TODO: License declaration',
+    extras_require={
+        'test': [
+            'pytest',
+        ],
+    },
+    entry_points={
+        'console_scripts': [
+            'camera_node = camera_bridge.camera_node:main',
+            'stereo_processor = camera_bridge.camera_processor:main',
+            'dual_camera_node = camera_bridge.dual_camera_node:main',
+            'stereo_calibrator = camera_bridge.stereo_calibrator:main',
+            'stereo_depth = camera_bridge.stereo_depth:main',
+            'cube_detector = camera_bridge.cube_detector:main',
+            'stereo_extrinsic_calibrator = camera_bridge.stereo_extrinsic_calibrator:main',
+            'dataset_recorder = camera_bridge.dataset_recorder:main',
+        ],
+    },
+)

@@ -76,7 +76,7 @@ private:
 
   bool first_write_{true};
 
-  static constexpr double STEPS_PER_REV = 16640.0;
+  static constexpr double STEPS_PER_REV = 23755.0;
   static constexpr double STEPS_PER_RAD =
     STEPS_PER_REV / (2.0 * 3.14159265358979323846);
 };

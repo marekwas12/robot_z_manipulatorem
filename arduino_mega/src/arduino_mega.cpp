@@ -27,7 +27,7 @@ int servoAngles[5] = {
     90,
     180,
     90,
-    90
+    54
 };
 
 constexpr int STEERING_LEFT_LIMIT = 75;
@@ -157,11 +157,24 @@ constexpr uint8_t DRIVE_LEFT_IN2_PIN = 23;
 constexpr uint8_t DRIVE_RIGHT_IN1_PIN = 24;
 constexpr uint8_t DRIVE_RIGHT_IN2_PIN = 25;
 
-// Prędkość jazdy 0–255
+// Prędkość jazdy MANUALNEJ 0–255
 constexpr uint8_t DRIVE_PWM = 200;
 
-// O ile zwiększać/zmniejszać PWM podczas łagodnego startu
+// Autonomiczna jazda ma domyslnie 100% predkosci manualnej.
+// DRIVE_PWM=200, wiec autonomousDrivePwm=200.
+// Python dodatkowo wysyla @D:200 przed startem misji.
+uint8_t autonomousDrivePwm = 200;
+
+// Rampa manualna - zachowujemy dotychczasową dynamikę.
 constexpr uint8_t DRIVE_RAMP_STEP = 8;
+
+// Rampa autonomiczna.
+// 2 PWM co 20 ms => 0 -> 200 okolo 2.0 s.
+// Tak samo przy zwyklym hamowaniu 200 -> 0 okolo 2.0 s.
+// Awaryjne @E nadal zeruje PWM natychmiast.
+// To daje liniowe przyspieszanie, odcinek stałej prędkości
+// i liniowe hamowanie - praktycznie profil trapezoidalny prędkości.
+constexpr uint8_t AUTONOMOUS_DRIVE_RAMP_STEP = 2;
 
 // Aktualizacja napędu co 20 ms
 constexpr unsigned long DRIVE_UPDATE_INTERVAL_MS = 20;
@@ -194,6 +207,17 @@ unsigned long lastJointPositionReportMs = 0;
 
 constexpr unsigned long JOINT_POSITION_REPORT_INTERVAL_MS = 100;
 bool autonomousMode = false;
+
+// =====================================================
+// HC-SR04 - NIEZALEZNE WŁĄCZANIE Z RASPBERRY / TELEFONU
+//
+// @U:1 -> włącz pomiary HC-SR04 także na postoju
+// @U:0 -> wyłącz ręczne wymuszenie HC-SR04
+//
+// Jazda autonomiczna nadal może korzystać z czujników
+// automatycznie przez autonomousMode.
+// =====================================================
+bool ultrasonicManualEnabled = false;
 
 // =====================================================
 // SILNIKI KROKOWE
@@ -235,7 +259,7 @@ AccelStepper stepper4(
     DIR4_PIN
 );
 
-constexpr long MOVE_STEPS = 500;
+constexpr long MOVE_STEPS = 50;
 
 constexpr float MAX_SPEED = 4000.0f;
 constexpr float ACCELERATION = 2000.0f;
@@ -337,7 +361,7 @@ void setServoAbsolute(
         targetAngle = constrain(
             targetAngle,
             100.0f,
-            150.0f
+            170.0f
         );
     }
 
@@ -1206,7 +1230,7 @@ void updateServo(
         servoAngles[index] = constrain(
             servoAngles[index],
             100,
-            150
+            170
         );
     }
     // Serwo 2 — ograniczenie skrętu
@@ -1591,6 +1615,20 @@ void updateDrive() {
     lastDriveUpdateMs = now;
 
     /*
+     * Profil prędkości platformy:
+     * - łagodny start,
+     * - stała prędkość,
+     * - łagodne hamowanie.
+     *
+     * W autonomous używamy dużo mniejszego kroku rampy,
+     * dzięki czemu platforma rozpędza się i hamuje około 1 s.
+     */
+    const uint8_t activeRampStep =
+        autonomousMode
+            ? AUTONOMOUS_DRIVE_RAMP_STEP
+            : DRIVE_RAMP_STEP;
+
+    /*
      * Jeśli zmieniamy kierunek, najpierw łagodnie zatrzymujemy
      * silniki. Dopiero przy PWM=0 zmieniamy kierunek.
      */
@@ -1598,8 +1636,8 @@ void updateDrive() {
         requestedDriveDirection != currentDriveDirection &&
         currentDrivePwm > 0
     ) {
-        if (currentDrivePwm > DRIVE_RAMP_STEP) {
-            currentDrivePwm -= DRIVE_RAMP_STEP;
+        if (currentDrivePwm > activeRampStep) {
+            currentDrivePwm -= activeRampStep;
         } else {
             currentDrivePwm = 0;
         }
@@ -1611,13 +1649,13 @@ void updateDrive() {
 
         if (currentDrivePwm < requestedDrivePwm) {
             const int nextPwm =
-                currentDrivePwm + DRIVE_RAMP_STEP;
+                currentDrivePwm + activeRampStep;
 
             currentDrivePwm =
                 min(nextPwm, static_cast<int>(requestedDrivePwm));
         } else if (currentDrivePwm > requestedDrivePwm) {
             const int nextPwm =
-                currentDrivePwm - DRIVE_RAMP_STEP;
+                currentDrivePwm - activeRampStep;
 
             currentDrivePwm =
                 max(nextPwm, static_cast<int>(requestedDrivePwm));
@@ -1657,17 +1695,24 @@ void emergencyStopDrive() {
 }
 
 bool shouldRunUltrasonicSensors() {
-    if (!autonomousMode) {
-        return false;
+
+    // Ręczne włączenie z Raspberry / telefonu:
+    // @U:1
+    //
+    // Dzięki temu czujniki pracują także wtedy,
+    // gdy robot stoi i jazda autonomiczna nie jest uruchomiona.
+    if (ultrasonicManualEnabled) {
+        return true;
     }
 
-    // Czujniki działają również podczas łagodnego hamowania,
-    // dopóki platforma rzeczywiście jeszcze się porusza.
-    const bool platformDriving =
-        requestedDriveDirection != DriveDirection::STOP ||
-        currentDrivePwm > 0;
+    // Zachowujemy dotychczasowe zachowanie:
+    // w trybie autonomicznym HC-SR04 pracują cały czas,
+    // również gdy platforma chwilowo stoi.
+    if (autonomousMode) {
+        return true;
+    }
 
-    return platformDriving;
+    return false;
 }
 
 void sendRobotStatus() {
@@ -1826,6 +1871,136 @@ void handleAutonomousCommand(
     char* command
 ) {
 
+    // =====================================================
+    // HC-SR04 - RĘCZNE WŁĄCZENIE / WYŁĄCZENIE
+    //
+    // Raspberry / telefon wysyła:
+    //   @U:1  -> włącz czujniki
+    //   @U:0  -> wyłącz ręczne wymuszenie czujników
+    //
+    // Do tej funkcji trafia już:
+    //   U:1
+    //   U:0
+    // =====================================================
+
+    if (
+        command[0] == 'U' &&
+        command[1] == ':'
+    ) {
+
+        const int enabled =
+            atoi(
+                command + 2
+            );
+
+        if (enabled == 1) {
+
+            ultrasonicManualEnabled = true;
+
+            // Zaczynamy nową pełną sekwencję 6 czujników.
+            currentUltrasonicSensor = 0;
+            lastUltrasonicMeasurementMs =
+                millis() - ULTRASONIC_INTERVAL_MS;
+
+            Serial.println(
+                F("{\"type\":\"ultrasonic_control\",\"ok\":true,\"enabled\":true}")
+            );
+
+        } else if (enabled == 0) {
+
+            ultrasonicManualEnabled = false;
+
+            Serial.println(
+                F("{\"type\":\"ultrasonic_control\",\"ok\":true,\"enabled\":false}")
+            );
+
+        } else {
+
+            Serial.println(
+                F("{\"type\":\"ultrasonic_control\",\"ok\":false,\"error\":\"bad_value\"}")
+            );
+        }
+
+        return;
+    }
+
+
+    // =====================================================
+    // AWARYJNY STOP PLATFORMY
+    //
+    // Z Raspberry:
+    //   @E
+    //
+    // Ten STOP NIE uzywa rampy. PWM spada natychmiast do 0.
+    // Uzywamy go tylko przy przeszkodzie / utracie czujnikow.
+    // =====================================================
+
+    if (
+        command[0] == 'E' &&
+        command[1] == '\0'
+    ) {
+        emergencyStopDrive();
+
+        Serial.println(
+            F("{\"type\":\"drive_emergency_stop\",\"ok\":true}")
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // PREDKOSC JAZDY AUTONOMICZNEJ
+    //
+    // Z Raspberry:
+    //   @D:100
+    //
+    // Do tej funkcji trafia:
+    //   D:100
+    // =====================================================
+
+    if (
+        command[0] == 'D' &&
+        command[1] == ':'
+    ) {
+        int pwmValue = atoi(
+            command + 2
+        );
+
+        pwmValue = constrain(
+            pwmValue,
+            0,
+            255
+        );
+
+        autonomousDrivePwm =
+            static_cast<uint8_t>(
+                pwmValue
+            );
+
+        Serial.print(
+            F("{\"type\":\"drive_speed\",\"ok\":true,\"pwm\":")
+        );
+        Serial.print(
+            autonomousDrivePwm
+        );
+        Serial.println(
+            F("}")
+        );
+
+        // Jeżeli platforma już jedzie w autonomous, zmieniamy
+        // target PWM bez szarpnięcia. updateDrive() dojedzie do niego rampą.
+        if (
+            autonomousMode &&
+            requestedDriveDirection != DriveDirection::STOP
+        ) {
+            requestedDrivePwm =
+                autonomousDrivePwm;
+        }
+
+        return;
+    }
+
 
         // =====================================================
     // KOMENDA ZBIORCZA J1-J5
@@ -1937,34 +2112,57 @@ void handleAutonomousCommand(
 
     if (command[0] == 'S') {
 
-        int servoNumber = 0;
-        float targetAngle = 0.0f;
+        // Oczekiwany format:
+        // S1:148
+        // S5:54
+        // S5:72
 
-        const int parsed = sscanf(
+        char* colon = strchr(
             command,
-            "S%d:%f",
-            &servoNumber,
-            &targetAngle
+            ':'
         );
 
-        if (parsed != 2) {
+        if (colon == nullptr) {
+
             Serial.println(
                 F("{\"type\":\"command\",\"ok\":false,\"error\":\"bad_servo_format\"}")
             );
+
             return;
         }
+
+        // Rozdzielamy:
+        //
+        // S1:148
+        //
+        // na:
+        // S1
+        // 148
+
+        *colon = '\0';
+
+        const int servoNumber =
+            atoi(
+                command + 1
+            );
+
+        const float targetAngle =
+            atof(
+                colon + 1
+            );
 
         if (
             servoNumber < 1 ||
             servoNumber > 5
         ) {
+
             Serial.println(
                 F("{\"type\":\"command\",\"ok\":false,\"error\":\"bad_servo\"}")
             );
+
             return;
         }
 
-        // setServoTarget używa indeksów 0–4.
         const uint8_t servoIndex =
             static_cast<uint8_t>(
                 servoNumber - 1
@@ -1979,7 +2177,9 @@ void handleAutonomousCommand(
             F("{\"type\":\"servo\",\"ok\":true,\"servo\":")
         );
 
-        Serial.print(servoNumber);
+        Serial.print(
+            servoNumber
+        );
 
         Serial.print(
             F(",\"target\":")
@@ -1990,7 +2190,9 @@ void handleAutonomousCommand(
             1
         );
 
-        Serial.println(F("}"));
+        Serial.println(
+            F("}")
+        );
 
         return;
     }
@@ -2101,14 +2303,13 @@ void handleCommand(char command) {
         case 'V':
 
             Serial.println(F("------------------------------"));
-            Serial.println(F("AKTUALNE POZYCJE JOINTOW"));
+            Serial.println(F("AKTUALNE POZYCJE"));
 
-            // J1 = stepper3
+            // Steppery
             Serial.print(F("J1 = "));
             Serial.print(stepper3.currentPosition());
             Serial.println(F(" krokow"));
 
-            // J2 = stepper1 + stepper2
             Serial.print(F("J2 = "));
             Serial.print(
                 stepper1.currentPosition() *
@@ -2116,20 +2317,31 @@ void handleCommand(char command) {
             );
             Serial.println(F(" krokow"));
 
-            // J3 = stepper4
             Serial.print(F("J3 = "));
             Serial.print(stepper4.currentPosition());
             Serial.println(F(" krokow"));
 
-            // Serwa
+            // SERVO 1 = kamera
+            Serial.print(F("CAMERA / servo1 = "));
+            Serial.print(servoAngles[0]);
+            Serial.println(F(" stopni"));
+
+            // SERVO 2 = skret kol
+            Serial.print(F("STEERING / servo2 = "));
+            Serial.print(servoAngles[1]);
+            Serial.println(F(" stopni"));
+
+            // SERVO 3 = J4
             Serial.print(F("J4 / servo3 = "));
             Serial.print(servoAngles[2]);
             Serial.println(F(" stopni"));
 
+            // SERVO 4 = J5
             Serial.print(F("J5 / servo4 = "));
             Serial.print(servoAngles[3]);
             Serial.println(F(" stopni"));
 
+            // SERVO 5 = chwytak
             Serial.print(F("GRIPPER / servo5 = "));
             Serial.print(servoAngles[4]);
             Serial.println(F(" stopni"));
@@ -2190,6 +2402,7 @@ void handleCommand(char command) {
             lastUltrasonicMeasurementMs = 0;
 
             Serial.println(F("Tryb: autonomiczny"));
+            sendRobotStatus();
             break;
 
         case 'M':
@@ -2200,6 +2413,7 @@ void handleCommand(char command) {
             requestDrive(DriveDirection::STOP);
 
             Serial.println(F("Tryb: manualny"));
+            sendRobotStatus();
             break;
 
         // Górne wentylatory — przełącznik
@@ -2246,12 +2460,18 @@ void handleCommand(char command) {
         // -------------------------------------------------
 
         case '1':
-            requestDrive(DriveDirection::FORWARD);
+            requestDrive(
+                DriveDirection::FORWARD,
+                autonomousMode ? autonomousDrivePwm : DRIVE_PWM
+            );
             Serial.println(F("Jazda: przod"));
             break;
 
         case '2':
-            requestDrive(DriveDirection::BACKWARD);
+            requestDrive(
+                DriveDirection::BACKWARD,
+                autonomousMode ? autonomousDrivePwm : DRIVE_PWM
+            );
             Serial.println(F("Jazda: tyl"));
             break;
 
@@ -2703,6 +2923,18 @@ void setup() {
     delay(10);
     
     
+    // =====================================================
+    // POZYCJE STARTOWE SERW
+    // =====================================================
+
+    setServoTarget(0, servoAngles[0]);
+    setServoTarget(1, servoAngles[1]);
+    setServoTarget(2, servoAngles[2]);
+    setServoTarget(3, servoAngles[3]);
+    setServoTarget(4, servoAngles[4]);
+
+
+
     // =====================================================
     // SILNIKI KROKOWE
     // =====================================================

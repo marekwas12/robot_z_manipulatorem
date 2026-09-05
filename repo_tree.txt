@@ -1,0 +1,2002 @@
+src
+├── camera_bridge
+│   ├── camera_bridge
+│   │   ├── __init__.py
+│   │   ├── ai_cube_detector.py
+│   │   ├── camera_node.py
+│   │   ├── camera_processor.py
+│   │   ├── cube_detector.py
+│   │   ├── dataset_recorder.py
+│   │   ├── dual_camera_node.py
+│   │   ├── stereo_calibrator.py
+│   │   ├── stereo_depth.py
+│   │   └── stereo_extrinsic_calibrator.py
+│   ├── launch
+│   │   ├── camera.launch.py
+│   │   └── stereo_cameras.launch.py
+│   ├── package.xml
+│   ├── resource
+│   │   └── camera_bridge
+│   ├── setup.cfg
+│   ├── setup.py
+│   └── test
+│       ├── test_copyright.py
+│       ├── test_flake8.py
+│       └── test_pep257.py
+├── camera_ros
+│   ├── .clang-format
+│   ├── .flake8
+│   ├── .github
+│   │   ├── dependabot.yml
+│   │   └── workflows
+│   │       ├── bloom.yml
+│   │       └── main.yml
+│   ├── CMakeLists.txt
+│   ├── LICENSE
+│   ├── README.md
+│   ├── launch
+│   │   └── camera.launch.py
+│   ├── package.xml
+│   └── src
+│       ├── CameraNode.cpp
+│       ├── ParameterConflictHandler.cpp
+│       ├── ParameterConflictHandler.hpp
+│       ├── ParameterHandler.cpp
+│       ├── ParameterHandler.hpp
+│       ├── clamp.cpp
+│       ├── clamp.hpp
+│       ├── cv_to_pv.cpp
+│       ├── cv_to_pv.hpp
+│       ├── exceptions.hpp
+│       ├── format_mapping.cpp
+│       ├── format_mapping.hpp
+│       ├── libcamera_version_utils.hpp
+│       ├── pretty_print.cpp
+│       ├── pretty_print.hpp
+│       ├── pv_to_cv.cpp
+│       ├── pv_to_cv.hpp
+│       ├── type_extent.cpp
+│       ├── type_extent.hpp
+│       ├── types.cpp
+│       └── types.hpp
+├── libcamera
+│   ├── .b4-config
+│   ├── .clang-format
+│   ├── .clang-tidy
+│   ├── .editorconfig
+│   ├── .github
+│   │   └── workflows
+│   │       └── gen_orig.yml
+│   ├── .gitignore
+│   ├── COPYING.rst
+│   ├── Documentation
+│   │   ├── Doxyfile-common.in
+│   │   ├── Doxyfile-internal.in
+│   │   ├── Doxyfile-public.in
+│   │   ├── binning.svg
+│   │   ├── camera-sensor-model.rst
+│   │   ├── code-of-conduct.rst
+│   │   ├── coding-style.rst
+│   │   ├── conf.py.in
+│   │   ├── contributing.rst
+│   │   ├── design
+│   │   │   └── ae.rst
+│   │   ├── doxygen-awesome-css
+│   │   │   ├── doxygen-awesome-sidebar-only.css
+│   │   │   └── doxygen-awesome.css
+│   │   ├── feature_requirements.rst
+│   │   ├── gen-doxyfile.py
+│   │   ├── getting-started.rst
+│   │   ├── guides
+│   │   │   ├── application-developer.rst
+│   │   │   ├── ipa.rst
+│   │   │   ├── pipeline-handler.rst
+│   │   │   └── tracing.rst
+│   │   ├── images
+│   │   │   └── rotation
+│   │   │       ├── rotate0.svg
+│   │   │       ├── rotate0Mirror.svg
+│   │   │       ├── rotate180.svg
+│   │   │       ├── rotate180Mirror.svg
+│   │   │       ├── rotate270.svg
+│   │   │       ├── rotate270Mirror.svg
+│   │   │       ├── rotate90.svg
+│   │   │       └── rotate90Mirror.svg
+│   │   ├── index.rst
+│   │   ├── install-doxygen.sh
+│   │   ├── internal-api
+│   │   │   └── index.rst
+│   │   ├── introduction.rst
+│   │   ├── isp-feature-matrix.rst
+│   │   ├── lens_driver_requirements.rst
+│   │   ├── libcamera_architecture.rst
+│   │   ├── mainpage.dox
+│   │   ├── mali-c55.dot
+│   │   ├── meson.build
+│   │   ├── public-api
+│   │   │   └── index.rst
+│   │   ├── python-bindings.rst
+│   │   ├── runtime_configuration.rst
+│   │   ├── sensor-support.rst
+│   │   ├── sensor_driver_requirements.rst
+│   │   ├── sensor_model.svg
+│   │   ├── skipping.svg
+│   │   ├── software-isp-benchmarking.rst
+│   │   ├── theme
+│   │   │   └── static
+│   │   │       └── libcamera-logo-text.svg
+│   │   └── thread-safety.dox
+│   ├── LICENSES
+│   │   ├── Apache-2.0.txt
+│   │   ├── BSD-2-Clause.txt
+│   │   ├── BSD-3-Clause.txt
+│   │   ├── CC-BY-4.0.txt
+│   │   ├── CC-BY-SA-4.0.txt
+│   │   ├── CC0-1.0.txt
+│   │   ├── GPL-2.0+.txt -> GPL-2.0-or-later.txt
+│   │   ├── GPL-2.0-only.txt
+│   │   ├── GPL-2.0-or-later.txt
+│   │   ├── GPL-2.0.txt -> GPL-2.0-only.txt
+│   │   ├── LGPL-2.1-or-later.txt
+│   │   ├── Linux-syscall-note.txt
+│   │   └── MIT.txt
+│   ├── README.rst
+│   ├── REUSE.toml
+│   ├── include
+│   │   ├── android
+│   │   │   ├── hardware
+│   │   │   │   └── libhardware
+│   │   │   │       └── include
+│   │   │   │           └── hardware
+│   │   │   │               ├── camera3.h
+│   │   │   │               ├── camera_common.h
+│   │   │   │               ├── fb.h
+│   │   │   │               ├── gralloc.h
+│   │   │   │               └── hardware.h
+│   │   │   ├── meson.build
+│   │   │   ├── metadata
+│   │   │   │   ├── camera_metadata_hidden.h
+│   │   │   │   └── system
+│   │   │   │       ├── camera_metadata.h
+│   │   │   │       ├── camera_metadata_tags.h
+│   │   │   │       └── camera_vendor_tags.h
+│   │   │   └── system
+│   │   │       └── core
+│   │   │           └── include
+│   │   │               ├── android
+│   │   │               │   └── log.h
+│   │   │               ├── cutils
+│   │   │               │   ├── compiler.h
+│   │   │               │   └── native_handle.h
+│   │   │               └── system
+│   │   │                   ├── camera.h
+│   │   │                   ├── graphics-base-v1.0.h
+│   │   │                   ├── graphics-base-v1.1.h
+│   │   │                   ├── graphics-base.h
+│   │   │                   ├── graphics-sw.h
+│   │   │                   └── graphics.h
+│   │   ├── libcamera
+│   │   │   ├── base
+│   │   │   │   ├── backtrace.h
+│   │   │   │   ├── bound_method.h
+│   │   │   │   ├── class.h
+│   │   │   │   ├── event_dispatcher.h
+│   │   │   │   ├── event_dispatcher_poll.h
+│   │   │   │   ├── event_notifier.h
+│   │   │   │   ├── file.h
+│   │   │   │   ├── flags.h
+│   │   │   │   ├── log.h
+│   │   │   │   ├── memfd.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── message.h
+│   │   │   │   ├── mutex.h
+│   │   │   │   ├── object.h
+│   │   │   │   ├── private.h
+│   │   │   │   ├── regex.h
+│   │   │   │   ├── semaphore.h
+│   │   │   │   ├── shared_fd.h
+│   │   │   │   ├── signal.h
+│   │   │   │   ├── span.h
+│   │   │   │   ├── thread.h
+│   │   │   │   ├── thread_annotations.h
+│   │   │   │   ├── timer.h
+│   │   │   │   ├── unique_fd.h
+│   │   │   │   └── utils.h
+│   │   │   ├── camera.h
+│   │   │   ├── camera_manager.h
+│   │   │   ├── color_space.h
+│   │   │   ├── control_ids.h.in
+│   │   │   ├── controls.h
+│   │   │   ├── fence.h
+│   │   │   ├── formats.h.in
+│   │   │   ├── framebuffer.h
+│   │   │   ├── framebuffer_allocator.h
+│   │   │   ├── geometry.h
+│   │   │   ├── internal
+│   │   │   │   ├── bayer_format.h
+│   │   │   │   ├── byte_stream_buffer.h
+│   │   │   │   ├── camera.h
+│   │   │   │   ├── camera_controls.h
+│   │   │   │   ├── camera_lens.h
+│   │   │   │   ├── camera_manager.h
+│   │   │   │   ├── camera_sensor.h
+│   │   │   │   ├── camera_sensor_properties.h
+│   │   │   │   ├── clock_recovery.h
+│   │   │   │   ├── control_serializer.h
+│   │   │   │   ├── control_validator.h
+│   │   │   │   ├── converter
+│   │   │   │   │   ├── converter_dw100.h
+│   │   │   │   │   ├── converter_dw100_vertexmap.h
+│   │   │   │   │   ├── converter_v4l2_m2m.h
+│   │   │   │   │   └── meson.build
+│   │   │   │   ├── converter.h
+│   │   │   │   ├── debug_controls.h
+│   │   │   │   ├── delayed_controls.h
+│   │   │   │   ├── device_enumerator.h
+│   │   │   │   ├── device_enumerator_sysfs.h
+│   │   │   │   ├── device_enumerator_udev.h
+│   │   │   │   ├── dma_buf_allocator.h
+│   │   │   │   ├── egl.h
+│   │   │   │   ├── formats.h
+│   │   │   │   ├── framebuffer.h
+│   │   │   │   ├── global_configuration.h
+│   │   │   │   ├── ipa_data_serializer.h
+│   │   │   │   ├── ipa_manager.h
+│   │   │   │   ├── ipa_module.h
+│   │   │   │   ├── ipa_proxy.h
+│   │   │   │   ├── ipc_pipe.h
+│   │   │   │   ├── ipc_pipe_unixsocket.h
+│   │   │   │   ├── ipc_unixsocket.h
+│   │   │   │   ├── mapped_framebuffer.h
+│   │   │   │   ├── matrix.h
+│   │   │   │   ├── media_device.h
+│   │   │   │   ├── media_object.h
+│   │   │   │   ├── media_pipeline.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── pipeline_handler.h
+│   │   │   │   ├── process.h
+│   │   │   │   ├── pub_key.h
+│   │   │   │   ├── request.h
+│   │   │   │   ├── shared_mem_object.h
+│   │   │   │   ├── software_isp
+│   │   │   │   │   ├── benchmark.h
+│   │   │   │   │   ├── debayer_params.h
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   ├── software_isp.h
+│   │   │   │   │   ├── swisp_stats.h
+│   │   │   │   │   └── swstats_cpu.h
+│   │   │   │   ├── source_paths.h
+│   │   │   │   ├── sysfs.h
+│   │   │   │   ├── tracepoints
+│   │   │   │   │   ├── buffer_enums.tp
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   ├── pipeline.tp
+│   │   │   │   │   ├── request.tp
+│   │   │   │   │   └── request_enums.tp
+│   │   │   │   ├── tracepoints.h.in
+│   │   │   │   ├── v4l2_device.h
+│   │   │   │   ├── v4l2_pixelformat.h
+│   │   │   │   ├── v4l2_request.h
+│   │   │   │   ├── v4l2_subdevice.h
+│   │   │   │   ├── v4l2_videodevice.h
+│   │   │   │   ├── value_node.h
+│   │   │   │   ├── vector.h
+│   │   │   │   └── yaml_parser.h
+│   │   │   ├── ipa
+│   │   │   │   ├── core.mojom
+│   │   │   │   ├── ipa_controls.h
+│   │   │   │   ├── ipa_interface.h
+│   │   │   │   ├── ipa_module_info.h
+│   │   │   │   ├── ipu3.mojom
+│   │   │   │   ├── mali-c55.mojom
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── raspberrypi.mojom
+│   │   │   │   ├── rkisp1.mojom
+│   │   │   │   ├── soft.mojom
+│   │   │   │   └── vimc.mojom
+│   │   │   ├── logging.h
+│   │   │   ├── meson.build
+│   │   │   ├── orientation.h
+│   │   │   ├── pixel_format.h
+│   │   │   ├── request.h
+│   │   │   ├── stream.h
+│   │   │   ├── transform.h
+│   │   │   └── version.h.in
+│   │   ├── linux
+│   │   │   ├── README
+│   │   │   ├── bcm2835-isp.h
+│   │   │   ├── dma-buf.h
+│   │   │   ├── dma-heap.h
+│   │   │   ├── drm.h
+│   │   │   ├── drm_fourcc.h
+│   │   │   ├── drm_mode.h
+│   │   │   ├── dw100.h
+│   │   │   ├── intel-ipu3.h
+│   │   │   ├── media
+│   │   │   │   ├── arm
+│   │   │   │   │   └── mali-c55-config.h
+│   │   │   │   └── v4l2-isp.h
+│   │   │   ├── media-bus-format.h
+│   │   │   ├── media.h
+│   │   │   ├── rkisp1-config.h
+│   │   │   ├── stddef.h
+│   │   │   ├── udmabuf.h
+│   │   │   ├── v4l2-common.h
+│   │   │   ├── v4l2-controls.h
+│   │   │   ├── v4l2-mediabus.h
+│   │   │   ├── v4l2-subdev.h
+│   │   │   └── videodev2.h
+│   │   └── meson.build
+│   ├── meson.build
+│   ├── meson_options.txt
+│   ├── src
+│   │   ├── android
+│   │   │   ├── camera3_hal.cpp
+│   │   │   ├── camera_buffer.h
+│   │   │   ├── camera_capabilities.cpp
+│   │   │   ├── camera_capabilities.h
+│   │   │   ├── camera_device.cpp
+│   │   │   ├── camera_device.h
+│   │   │   ├── camera_hal_config.cpp
+│   │   │   ├── camera_hal_config.h
+│   │   │   ├── camera_hal_manager.cpp
+│   │   │   ├── camera_hal_manager.h
+│   │   │   ├── camera_metadata.cpp
+│   │   │   ├── camera_metadata.h
+│   │   │   ├── camera_ops.cpp
+│   │   │   ├── camera_ops.h
+│   │   │   ├── camera_request.cpp
+│   │   │   ├── camera_request.h
+│   │   │   ├── camera_stream.cpp
+│   │   │   ├── camera_stream.h
+│   │   │   ├── cros
+│   │   │   │   ├── camera3_hal.cpp
+│   │   │   │   └── meson.build
+│   │   │   ├── cros_mojo_token.h
+│   │   │   ├── data
+│   │   │   │   ├── nautilus
+│   │   │   │   │   └── camera_hal.yaml
+│   │   │   │   └── soraka
+│   │   │   │       └── camera_hal.yaml
+│   │   │   ├── frame_buffer_allocator.h
+│   │   │   ├── hal_framebuffer.cpp
+│   │   │   ├── hal_framebuffer.h
+│   │   │   ├── jpeg
+│   │   │   │   ├── encoder.h
+│   │   │   │   ├── encoder_jea.cpp
+│   │   │   │   ├── encoder_jea.h
+│   │   │   │   ├── encoder_libjpeg.cpp
+│   │   │   │   ├── encoder_libjpeg.h
+│   │   │   │   ├── exif.cpp
+│   │   │   │   ├── exif.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── post_processor_jpeg.cpp
+│   │   │   │   ├── post_processor_jpeg.h
+│   │   │   │   ├── thumbnailer.cpp
+│   │   │   │   └── thumbnailer.h
+│   │   │   ├── meson.build
+│   │   │   ├── metadata
+│   │   │   │   ├── camera_metadata.c
+│   │   │   │   └── camera_metadata_tag_info.c
+│   │   │   ├── mm
+│   │   │   │   ├── cros_camera_buffer.cpp
+│   │   │   │   ├── cros_frame_buffer_allocator.cpp
+│   │   │   │   ├── generic_camera_buffer.cpp
+│   │   │   │   ├── generic_frame_buffer_allocator.cpp
+│   │   │   │   ├── libhardware_stub.c
+│   │   │   │   └── meson.build
+│   │   │   ├── post_processor.h
+│   │   │   └── yuv
+│   │   │       ├── post_processor_yuv.cpp
+│   │   │       └── post_processor_yuv.h
+│   │   ├── apps
+│   │   │   ├── cam
+│   │   │   │   ├── camera_session.cpp
+│   │   │   │   ├── camera_session.h
+│   │   │   │   ├── capture-script.yaml
+│   │   │   │   ├── capture_script.cpp
+│   │   │   │   ├── capture_script.h
+│   │   │   │   ├── drm.cpp
+│   │   │   │   ├── drm.h
+│   │   │   │   ├── file_sink.cpp
+│   │   │   │   ├── file_sink.h
+│   │   │   │   ├── frame_sink.cpp
+│   │   │   │   ├── frame_sink.h
+│   │   │   │   ├── kms_sink.cpp
+│   │   │   │   ├── kms_sink.h
+│   │   │   │   ├── main.cpp
+│   │   │   │   ├── main.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── sdl_sink.cpp
+│   │   │   │   ├── sdl_sink.h
+│   │   │   │   ├── sdl_texture.cpp
+│   │   │   │   ├── sdl_texture.h
+│   │   │   │   ├── sdl_texture_1plane.cpp
+│   │   │   │   ├── sdl_texture_1plane.h
+│   │   │   │   ├── sdl_texture_mjpg.cpp
+│   │   │   │   ├── sdl_texture_mjpg.h
+│   │   │   │   ├── sdl_texture_yuv.cpp
+│   │   │   │   └── sdl_texture_yuv.h
+│   │   │   ├── common
+│   │   │   │   ├── dng_writer.cpp
+│   │   │   │   ├── dng_writer.h
+│   │   │   │   ├── event_loop.cpp
+│   │   │   │   ├── event_loop.h
+│   │   │   │   ├── image.cpp
+│   │   │   │   ├── image.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── options.cpp
+│   │   │   │   ├── options.h
+│   │   │   │   ├── ppm_writer.cpp
+│   │   │   │   ├── ppm_writer.h
+│   │   │   │   ├── stream_options.cpp
+│   │   │   │   └── stream_options.h
+│   │   │   ├── ipa-verify
+│   │   │   │   ├── main.cpp
+│   │   │   │   └── meson.build
+│   │   │   ├── lc-compliance
+│   │   │   │   ├── environment.cpp
+│   │   │   │   ├── environment.h
+│   │   │   │   ├── helpers
+│   │   │   │   │   ├── capture.cpp
+│   │   │   │   │   └── capture.h
+│   │   │   │   ├── main.cpp
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── test_base.cpp
+│   │   │   │   ├── test_base.h
+│   │   │   │   └── tests
+│   │   │   │       └── capture_test.cpp
+│   │   │   ├── meson.build
+│   │   │   └── qcam
+│   │   │       ├── assets
+│   │   │       │   ├── feathericons
+│   │   │       │   │   ├── activity.svg
+│   │   │       │   │   ├── airplay.svg
+│   │   │       │   │   ├── alert-circle.svg
+│   │   │       │   │   ├── alert-octagon.svg
+│   │   │       │   │   ├── alert-triangle.svg
+│   │   │       │   │   ├── align-center.svg
+│   │   │       │   │   ├── align-justify.svg
+│   │   │       │   │   ├── align-left.svg
+│   │   │       │   │   ├── align-right.svg
+│   │   │       │   │   ├── anchor.svg
+│   │   │       │   │   ├── aperture.svg
+│   │   │       │   │   ├── archive.svg
+│   │   │       │   │   ├── arrow-down-circle.svg
+│   │   │       │   │   ├── arrow-down-left.svg
+│   │   │       │   │   ├── arrow-down-right.svg
+│   │   │       │   │   ├── arrow-down.svg
+│   │   │       │   │   ├── arrow-left-circle.svg
+│   │   │       │   │   ├── arrow-left.svg
+│   │   │       │   │   ├── arrow-right-circle.svg
+│   │   │       │   │   ├── arrow-right.svg
+│   │   │       │   │   ├── arrow-up-circle.svg
+│   │   │       │   │   ├── arrow-up-left.svg
+│   │   │       │   │   ├── arrow-up-right.svg
+│   │   │       │   │   ├── arrow-up.svg
+│   │   │       │   │   ├── at-sign.svg
+│   │   │       │   │   ├── award.svg
+│   │   │       │   │   ├── bar-chart-2.svg
+│   │   │       │   │   ├── bar-chart.svg
+│   │   │       │   │   ├── battery-charging.svg
+│   │   │       │   │   ├── battery.svg
+│   │   │       │   │   ├── bell-off.svg
+│   │   │       │   │   ├── bell.svg
+│   │   │       │   │   ├── bluetooth.svg
+│   │   │       │   │   ├── bold.svg
+│   │   │       │   │   ├── book-open.svg
+│   │   │       │   │   ├── book.svg
+│   │   │       │   │   ├── bookmark.svg
+│   │   │       │   │   ├── box.svg
+│   │   │       │   │   ├── briefcase.svg
+│   │   │       │   │   ├── calendar.svg
+│   │   │       │   │   ├── camera-off.svg
+│   │   │       │   │   ├── camera.svg
+│   │   │       │   │   ├── cast.svg
+│   │   │       │   │   ├── check-circle.svg
+│   │   │       │   │   ├── check-square.svg
+│   │   │       │   │   ├── check.svg
+│   │   │       │   │   ├── chevron-down.svg
+│   │   │       │   │   ├── chevron-left.svg
+│   │   │       │   │   ├── chevron-right.svg
+│   │   │       │   │   ├── chevron-up.svg
+│   │   │       │   │   ├── chevrons-down.svg
+│   │   │       │   │   ├── chevrons-left.svg
+│   │   │       │   │   ├── chevrons-right.svg
+│   │   │       │   │   ├── chevrons-up.svg
+│   │   │       │   │   ├── chrome.svg
+│   │   │       │   │   ├── circle.svg
+│   │   │       │   │   ├── clipboard.svg
+│   │   │       │   │   ├── clock.svg
+│   │   │       │   │   ├── cloud-drizzle.svg
+│   │   │       │   │   ├── cloud-lightning.svg
+│   │   │       │   │   ├── cloud-off.svg
+│   │   │       │   │   ├── cloud-rain.svg
+│   │   │       │   │   ├── cloud-snow.svg
+│   │   │       │   │   ├── cloud.svg
+│   │   │       │   │   ├── code.svg
+│   │   │       │   │   ├── codepen.svg
+│   │   │       │   │   ├── codesandbox.svg
+│   │   │       │   │   ├── coffee.svg
+│   │   │       │   │   ├── columns.svg
+│   │   │       │   │   ├── command.svg
+│   │   │       │   │   ├── compass.svg
+│   │   │       │   │   ├── copy.svg
+│   │   │       │   │   ├── corner-down-left.svg
+│   │   │       │   │   ├── corner-down-right.svg
+│   │   │       │   │   ├── corner-left-down.svg
+│   │   │       │   │   ├── corner-left-up.svg
+│   │   │       │   │   ├── corner-right-down.svg
+│   │   │       │   │   ├── corner-right-up.svg
+│   │   │       │   │   ├── corner-up-left.svg
+│   │   │       │   │   ├── corner-up-right.svg
+│   │   │       │   │   ├── cpu.svg
+│   │   │       │   │   ├── credit-card.svg
+│   │   │       │   │   ├── crop.svg
+│   │   │       │   │   ├── crosshair.svg
+│   │   │       │   │   ├── database.svg
+│   │   │       │   │   ├── delete.svg
+│   │   │       │   │   ├── disc.svg
+│   │   │       │   │   ├── dollar-sign.svg
+│   │   │       │   │   ├── download-cloud.svg
+│   │   │       │   │   ├── download.svg
+│   │   │       │   │   ├── droplet.svg
+│   │   │       │   │   ├── edit-2.svg
+│   │   │       │   │   ├── edit-3.svg
+│   │   │       │   │   ├── edit.svg
+│   │   │       │   │   ├── external-link.svg
+│   │   │       │   │   ├── eye-off.svg
+│   │   │       │   │   ├── eye.svg
+│   │   │       │   │   ├── facebook.svg
+│   │   │       │   │   ├── fast-forward.svg
+│   │   │       │   │   ├── feather.svg
+│   │   │       │   │   ├── feathericons.qrc
+│   │   │       │   │   ├── figma.svg
+│   │   │       │   │   ├── file-minus.svg
+│   │   │       │   │   ├── file-plus.svg
+│   │   │       │   │   ├── file-text.svg
+│   │   │       │   │   ├── file.svg
+│   │   │       │   │   ├── film.svg
+│   │   │       │   │   ├── filter.svg
+│   │   │       │   │   ├── flag.svg
+│   │   │       │   │   ├── folder-minus.svg
+│   │   │       │   │   ├── folder-plus.svg
+│   │   │       │   │   ├── folder.svg
+│   │   │       │   │   ├── framer.svg
+│   │   │       │   │   ├── frown.svg
+│   │   │       │   │   ├── gift.svg
+│   │   │       │   │   ├── git-branch.svg
+│   │   │       │   │   ├── git-commit.svg
+│   │   │       │   │   ├── git-merge.svg
+│   │   │       │   │   ├── git-pull-request.svg
+│   │   │       │   │   ├── github.svg
+│   │   │       │   │   ├── gitlab.svg
+│   │   │       │   │   ├── globe.svg
+│   │   │       │   │   ├── grid.svg
+│   │   │       │   │   ├── hard-drive.svg
+│   │   │       │   │   ├── hash.svg
+│   │   │       │   │   ├── headphones.svg
+│   │   │       │   │   ├── heart.svg
+│   │   │       │   │   ├── help-circle.svg
+│   │   │       │   │   ├── hexagon.svg
+│   │   │       │   │   ├── home.svg
+│   │   │       │   │   ├── image.svg
+│   │   │       │   │   ├── inbox.svg
+│   │   │       │   │   ├── info.svg
+│   │   │       │   │   ├── instagram.svg
+│   │   │       │   │   ├── italic.svg
+│   │   │       │   │   ├── key.svg
+│   │   │       │   │   ├── layers.svg
+│   │   │       │   │   ├── layout.svg
+│   │   │       │   │   ├── life-buoy.svg
+│   │   │       │   │   ├── link-2.svg
+│   │   │       │   │   ├── link.svg
+│   │   │       │   │   ├── linkedin.svg
+│   │   │       │   │   ├── list.svg
+│   │   │       │   │   ├── loader.svg
+│   │   │       │   │   ├── lock.svg
+│   │   │       │   │   ├── log-in.svg
+│   │   │       │   │   ├── log-out.svg
+│   │   │       │   │   ├── mail.svg
+│   │   │       │   │   ├── map-pin.svg
+│   │   │       │   │   ├── map.svg
+│   │   │       │   │   ├── maximize-2.svg
+│   │   │       │   │   ├── maximize.svg
+│   │   │       │   │   ├── meh.svg
+│   │   │       │   │   ├── menu.svg
+│   │   │       │   │   ├── message-circle.svg
+│   │   │       │   │   ├── message-square.svg
+│   │   │       │   │   ├── mic-off.svg
+│   │   │       │   │   ├── mic.svg
+│   │   │       │   │   ├── minimize-2.svg
+│   │   │       │   │   ├── minimize.svg
+│   │   │       │   │   ├── minus-circle.svg
+│   │   │       │   │   ├── minus-square.svg
+│   │   │       │   │   ├── minus.svg
+│   │   │       │   │   ├── monitor.svg
+│   │   │       │   │   ├── moon.svg
+│   │   │       │   │   ├── more-horizontal.svg
+│   │   │       │   │   ├── more-vertical.svg
+│   │   │       │   │   ├── mouse-pointer.svg
+│   │   │       │   │   ├── move.svg
+│   │   │       │   │   ├── music.svg
+│   │   │       │   │   ├── navigation-2.svg
+│   │   │       │   │   ├── navigation.svg
+│   │   │       │   │   ├── octagon.svg
+│   │   │       │   │   ├── package.svg
+│   │   │       │   │   ├── paperclip.svg
+│   │   │       │   │   ├── pause-circle.svg
+│   │   │       │   │   ├── pause.svg
+│   │   │       │   │   ├── pen-tool.svg
+│   │   │       │   │   ├── percent.svg
+│   │   │       │   │   ├── phone-call.svg
+│   │   │       │   │   ├── phone-forwarded.svg
+│   │   │       │   │   ├── phone-incoming.svg
+│   │   │       │   │   ├── phone-missed.svg
+│   │   │       │   │   ├── phone-off.svg
+│   │   │       │   │   ├── phone-outgoing.svg
+│   │   │       │   │   ├── phone.svg
+│   │   │       │   │   ├── pie-chart.svg
+│   │   │       │   │   ├── play-circle.svg
+│   │   │       │   │   ├── play.svg
+│   │   │       │   │   ├── plus-circle.svg
+│   │   │       │   │   ├── plus-square.svg
+│   │   │       │   │   ├── plus.svg
+│   │   │       │   │   ├── pocket.svg
+│   │   │       │   │   ├── power.svg
+│   │   │       │   │   ├── printer.svg
+│   │   │       │   │   ├── radio.svg
+│   │   │       │   │   ├── refresh-ccw.svg
+│   │   │       │   │   ├── refresh-cw.svg
+│   │   │       │   │   ├── repeat.svg
+│   │   │       │   │   ├── rewind.svg
+│   │   │       │   │   ├── rotate-ccw.svg
+│   │   │       │   │   ├── rotate-cw.svg
+│   │   │       │   │   ├── rss.svg
+│   │   │       │   │   ├── save.svg
+│   │   │       │   │   ├── scissors.svg
+│   │   │       │   │   ├── search.svg
+│   │   │       │   │   ├── send.svg
+│   │   │       │   │   ├── server.svg
+│   │   │       │   │   ├── settings.svg
+│   │   │       │   │   ├── share-2.svg
+│   │   │       │   │   ├── share.svg
+│   │   │       │   │   ├── shield-off.svg
+│   │   │       │   │   ├── shield.svg
+│   │   │       │   │   ├── shopping-bag.svg
+│   │   │       │   │   ├── shopping-cart.svg
+│   │   │       │   │   ├── shuffle.svg
+│   │   │       │   │   ├── sidebar.svg
+│   │   │       │   │   ├── skip-back.svg
+│   │   │       │   │   ├── skip-forward.svg
+│   │   │       │   │   ├── slack.svg
+│   │   │       │   │   ├── slash.svg
+│   │   │       │   │   ├── sliders.svg
+│   │   │       │   │   ├── smartphone.svg
+│   │   │       │   │   ├── smile.svg
+│   │   │       │   │   ├── speaker.svg
+│   │   │       │   │   ├── square.svg
+│   │   │       │   │   ├── star.svg
+│   │   │       │   │   ├── stop-circle.svg
+│   │   │       │   │   ├── sun.svg
+│   │   │       │   │   ├── sunrise.svg
+│   │   │       │   │   ├── sunset.svg
+│   │   │       │   │   ├── tablet.svg
+│   │   │       │   │   ├── tag.svg
+│   │   │       │   │   ├── target.svg
+│   │   │       │   │   ├── terminal.svg
+│   │   │       │   │   ├── thermometer.svg
+│   │   │       │   │   ├── thumbs-down.svg
+│   │   │       │   │   ├── thumbs-up.svg
+│   │   │       │   │   ├── toggle-left.svg
+│   │   │       │   │   ├── toggle-right.svg
+│   │   │       │   │   ├── tool.svg
+│   │   │       │   │   ├── trash-2.svg
+│   │   │       │   │   ├── trash.svg
+│   │   │       │   │   ├── trello.svg
+│   │   │       │   │   ├── trending-down.svg
+│   │   │       │   │   ├── trending-up.svg
+│   │   │       │   │   ├── triangle.svg
+│   │   │       │   │   ├── truck.svg
+│   │   │       │   │   ├── tv.svg
+│   │   │       │   │   ├── twitch.svg
+│   │   │       │   │   ├── twitter.svg
+│   │   │       │   │   ├── type.svg
+│   │   │       │   │   ├── umbrella.svg
+│   │   │       │   │   ├── underline.svg
+│   │   │       │   │   ├── unlock.svg
+│   │   │       │   │   ├── upload-cloud.svg
+│   │   │       │   │   ├── upload.svg
+│   │   │       │   │   ├── user-check.svg
+│   │   │       │   │   ├── user-minus.svg
+│   │   │       │   │   ├── user-plus.svg
+│   │   │       │   │   ├── user-x.svg
+│   │   │       │   │   ├── user.svg
+│   │   │       │   │   ├── users.svg
+│   │   │       │   │   ├── video-off.svg
+│   │   │       │   │   ├── video.svg
+│   │   │       │   │   ├── voicemail.svg
+│   │   │       │   │   ├── volume-1.svg
+│   │   │       │   │   ├── volume-2.svg
+│   │   │       │   │   ├── volume-x.svg
+│   │   │       │   │   ├── volume.svg
+│   │   │       │   │   ├── watch.svg
+│   │   │       │   │   ├── wifi-off.svg
+│   │   │       │   │   ├── wifi.svg
+│   │   │       │   │   ├── wind.svg
+│   │   │       │   │   ├── x-circle.svg
+│   │   │       │   │   ├── x-octagon.svg
+│   │   │       │   │   ├── x-square.svg
+│   │   │       │   │   ├── x.svg
+│   │   │       │   │   ├── youtube.svg
+│   │   │       │   │   ├── zap-off.svg
+│   │   │       │   │   ├── zap.svg
+│   │   │       │   │   ├── zoom-in.svg
+│   │   │       │   │   └── zoom-out.svg
+│   │   │       │   └── shader
+│   │   │       │       └── shaders.qrc
+│   │   │       ├── cam_select_dialog.cpp
+│   │   │       ├── cam_select_dialog.h
+│   │   │       ├── format_converter.cpp
+│   │   │       ├── format_converter.h
+│   │   │       ├── main.cpp
+│   │   │       ├── main_window.cpp
+│   │   │       ├── main_window.h
+│   │   │       ├── meson.build
+│   │   │       ├── message_handler.cpp
+│   │   │       ├── message_handler.h
+│   │   │       ├── viewfinder.h
+│   │   │       ├── viewfinder_gl.cpp
+│   │   │       ├── viewfinder_gl.h
+│   │   │       ├── viewfinder_qt.cpp
+│   │   │       └── viewfinder_qt.h
+│   │   ├── gstreamer
+│   │   │   ├── gstlibcamera-controls.cpp.in
+│   │   │   ├── gstlibcamera-controls.h
+│   │   │   ├── gstlibcamera-utils.cpp
+│   │   │   ├── gstlibcamera-utils.h
+│   │   │   ├── gstlibcamera.cpp
+│   │   │   ├── gstlibcameraallocator.cpp
+│   │   │   ├── gstlibcameraallocator.h
+│   │   │   ├── gstlibcamerapad.cpp
+│   │   │   ├── gstlibcamerapad.h
+│   │   │   ├── gstlibcamerapool.cpp
+│   │   │   ├── gstlibcamerapool.h
+│   │   │   ├── gstlibcameraprovider.cpp
+│   │   │   ├── gstlibcameraprovider.h
+│   │   │   ├── gstlibcamerasrc.cpp
+│   │   │   ├── gstlibcamerasrc.h
+│   │   │   └── meson.build
+│   │   ├── ipa
+│   │   │   ├── ipa-sign-install.sh
+│   │   │   ├── ipa-sign.sh
+│   │   │   ├── ipu3
+│   │   │   │   ├── algorithms
+│   │   │   │   │   ├── af.cpp
+│   │   │   │   │   ├── af.h
+│   │   │   │   │   ├── agc.cpp
+│   │   │   │   │   ├── agc.h
+│   │   │   │   │   ├── algorithm.h
+│   │   │   │   │   ├── awb.cpp
+│   │   │   │   │   ├── awb.h
+│   │   │   │   │   ├── blc.cpp
+│   │   │   │   │   ├── blc.h
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   ├── tone_mapping.cpp
+│   │   │   │   │   └── tone_mapping.h
+│   │   │   │   ├── data
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   └── uncalibrated.yaml
+│   │   │   │   ├── ipa_context.cpp
+│   │   │   │   ├── ipa_context.h
+│   │   │   │   ├── ipu3-ipa-design-guide.rst
+│   │   │   │   ├── ipu3.cpp
+│   │   │   │   ├── meson.build
+│   │   │   │   └── module.h
+│   │   │   ├── libipa
+│   │   │   │   ├── agc_mean_luminance.cpp
+│   │   │   │   ├── agc_mean_luminance.h
+│   │   │   │   ├── algorithm.cpp
+│   │   │   │   ├── algorithm.h
+│   │   │   │   ├── awb.cpp
+│   │   │   │   ├── awb.h
+│   │   │   │   ├── awb_bayes.cpp
+│   │   │   │   ├── awb_bayes.h
+│   │   │   │   ├── awb_grey.cpp
+│   │   │   │   ├── awb_grey.h
+│   │   │   │   ├── camera_sensor_helper.cpp
+│   │   │   │   ├── camera_sensor_helper.h
+│   │   │   │   ├── colours.cpp
+│   │   │   │   ├── colours.h
+│   │   │   │   ├── exposure_mode_helper.cpp
+│   │   │   │   ├── exposure_mode_helper.h
+│   │   │   │   ├── fc_queue.cpp
+│   │   │   │   ├── fc_queue.h
+│   │   │   │   ├── fixedpoint.cpp
+│   │   │   │   ├── fixedpoint.h
+│   │   │   │   ├── histogram.cpp
+│   │   │   │   ├── histogram.h
+│   │   │   │   ├── interpolator.cpp
+│   │   │   │   ├── interpolator.h
+│   │   │   │   ├── lsc_polynomial.cpp
+│   │   │   │   ├── lsc_polynomial.h
+│   │   │   │   ├── lux.cpp
+│   │   │   │   ├── lux.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── module.cpp
+│   │   │   │   ├── module.h
+│   │   │   │   ├── pwl.cpp
+│   │   │   │   ├── pwl.h
+│   │   │   │   ├── quantized.cpp
+│   │   │   │   ├── quantized.h
+│   │   │   │   ├── v4l2_params.cpp
+│   │   │   │   └── v4l2_params.h
+│   │   │   ├── mali-c55
+│   │   │   │   ├── algorithms
+│   │   │   │   │   ├── agc.cpp
+│   │   │   │   │   ├── agc.h
+│   │   │   │   │   ├── algorithm.h
+│   │   │   │   │   ├── awb.cpp
+│   │   │   │   │   ├── awb.h
+│   │   │   │   │   ├── blc.cpp
+│   │   │   │   │   ├── blc.h
+│   │   │   │   │   ├── lsc.cpp
+│   │   │   │   │   ├── lsc.h
+│   │   │   │   │   └── meson.build
+│   │   │   │   ├── data
+│   │   │   │   │   ├── imx415.yaml
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   └── uncalibrated.yaml
+│   │   │   │   ├── ipa_context.cpp
+│   │   │   │   ├── ipa_context.h
+│   │   │   │   ├── mali-c55.cpp
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── module.h
+│   │   │   │   └── params.h
+│   │   │   ├── meson.build
+│   │   │   ├── rkisp1
+│   │   │   │   ├── algorithms
+│   │   │   │   │   ├── agc.cpp
+│   │   │   │   │   ├── agc.h
+│   │   │   │   │   ├── algorithm.h
+│   │   │   │   │   ├── awb.cpp
+│   │   │   │   │   ├── awb.h
+│   │   │   │   │   ├── blc.cpp
+│   │   │   │   │   ├── blc.h
+│   │   │   │   │   ├── ccm.cpp
+│   │   │   │   │   ├── ccm.h
+│   │   │   │   │   ├── compress.cpp
+│   │   │   │   │   ├── compress.h
+│   │   │   │   │   ├── cproc.cpp
+│   │   │   │   │   ├── cproc.h
+│   │   │   │   │   ├── dpcc.cpp
+│   │   │   │   │   ├── dpcc.h
+│   │   │   │   │   ├── dpf.cpp
+│   │   │   │   │   ├── dpf.h
+│   │   │   │   │   ├── filter.cpp
+│   │   │   │   │   ├── filter.h
+│   │   │   │   │   ├── goc.cpp
+│   │   │   │   │   ├── goc.h
+│   │   │   │   │   ├── gsl.cpp
+│   │   │   │   │   ├── gsl.h
+│   │   │   │   │   ├── lsc.cpp
+│   │   │   │   │   ├── lsc.h
+│   │   │   │   │   ├── lux.cpp
+│   │   │   │   │   ├── lux.h
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   ├── wdr.cpp
+│   │   │   │   │   └── wdr.h
+│   │   │   │   ├── data
+│   │   │   │   │   ├── imx219.yaml
+│   │   │   │   │   ├── imx258.yaml
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   ├── ov2685.yaml
+│   │   │   │   │   ├── ov4689.yaml
+│   │   │   │   │   ├── ov5640.yaml
+│   │   │   │   │   ├── ov5695.yaml
+│   │   │   │   │   ├── ov8858.yaml
+│   │   │   │   │   └── uncalibrated.yaml
+│   │   │   │   ├── ipa_context.cpp
+│   │   │   │   ├── ipa_context.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── module.h
+│   │   │   │   ├── params.cpp
+│   │   │   │   ├── params.h
+│   │   │   │   └── rkisp1.cpp
+│   │   │   ├── rpi
+│   │   │   │   ├── README.md
+│   │   │   │   ├── cam_helper
+│   │   │   │   │   ├── cam_helper.cpp
+│   │   │   │   │   ├── cam_helper.h
+│   │   │   │   │   ├── cam_helper_imx219.cpp
+│   │   │   │   │   ├── cam_helper_imx283.cpp
+│   │   │   │   │   ├── cam_helper_imx290.cpp
+│   │   │   │   │   ├── cam_helper_imx296.cpp
+│   │   │   │   │   ├── cam_helper_imx415.cpp
+│   │   │   │   │   ├── cam_helper_imx477.cpp
+│   │   │   │   │   ├── cam_helper_imx500.cpp
+│   │   │   │   │   ├── cam_helper_imx519.cpp
+│   │   │   │   │   ├── cam_helper_imx708.cpp
+│   │   │   │   │   ├── cam_helper_ov5647.cpp
+│   │   │   │   │   ├── cam_helper_ov64a40.cpp
+│   │   │   │   │   ├── cam_helper_ov7251.cpp
+│   │   │   │   │   ├── cam_helper_ov9281.cpp
+│   │   │   │   │   ├── cam_helper_vd55g1.cpp
+│   │   │   │   │   ├── cam_helper_vd56g3.cpp
+│   │   │   │   │   ├── imx500_tensor_parser
+│   │   │   │   │   │   ├── apParams.flatbuffers_generated.h
+│   │   │   │   │   │   ├── flatbuffers
+│   │   │   │   │   │   │   ├── base.h
+│   │   │   │   │   │   │   ├── code_generators.h
+│   │   │   │   │   │   │   ├── flatbuffers.h
+│   │   │   │   │   │   │   ├── flatc.h
+│   │   │   │   │   │   │   ├── flexbuffers.h
+│   │   │   │   │   │   │   ├── grpc.h
+│   │   │   │   │   │   │   ├── hash.h
+│   │   │   │   │   │   │   ├── idl.h
+│   │   │   │   │   │   │   ├── minireflect.h
+│   │   │   │   │   │   │   ├── reflection.h
+│   │   │   │   │   │   │   ├── reflection_generated.h
+│   │   │   │   │   │   │   ├── registry.h
+│   │   │   │   │   │   │   ├── stl_emulation.h
+│   │   │   │   │   │   │   └── util.h
+│   │   │   │   │   │   ├── imx500_tensor_parser.cpp
+│   │   │   │   │   │   ├── imx500_tensor_parser.h
+│   │   │   │   │   │   └── meson.build
+│   │   │   │   │   ├── md_parser.h
+│   │   │   │   │   ├── md_parser_smia.cpp
+│   │   │   │   │   └── meson.build
+│   │   │   │   ├── common
+│   │   │   │   │   ├── ipa_base.cpp
+│   │   │   │   │   ├── ipa_base.h
+│   │   │   │   │   └── meson.build
+│   │   │   │   ├── controller
+│   │   │   │   │   ├── af_algorithm.h
+│   │   │   │   │   ├── af_status.h
+│   │   │   │   │   ├── agc_algorithm.h
+│   │   │   │   │   ├── agc_status.h
+│   │   │   │   │   ├── algorithm.cpp
+│   │   │   │   │   ├── algorithm.h
+│   │   │   │   │   ├── alsc_status.h
+│   │   │   │   │   ├── awb_algorithm.h
+│   │   │   │   │   ├── awb_status.h
+│   │   │   │   │   ├── black_level_algorithm.h
+│   │   │   │   │   ├── black_level_status.h
+│   │   │   │   │   ├── cac_status.h
+│   │   │   │   │   ├── camera_mode.h
+│   │   │   │   │   ├── ccm_algorithm.h
+│   │   │   │   │   ├── ccm_status.h
+│   │   │   │   │   ├── contrast_algorithm.h
+│   │   │   │   │   ├── contrast_status.h
+│   │   │   │   │   ├── controller.cpp
+│   │   │   │   │   ├── controller.h
+│   │   │   │   │   ├── decompand_algorithm.h
+│   │   │   │   │   ├── decompand_status.h
+│   │   │   │   │   ├── denoise_algorithm.h
+│   │   │   │   │   ├── denoise_status.h
+│   │   │   │   │   ├── device_status.cpp
+│   │   │   │   │   ├── device_status.h
+│   │   │   │   │   ├── dpc_status.h
+│   │   │   │   │   ├── geq_status.h
+│   │   │   │   │   ├── hdr_algorithm.h
+│   │   │   │   │   ├── hdr_status.h
+│   │   │   │   │   ├── histogram.cpp
+│   │   │   │   │   ├── histogram.h
+│   │   │   │   │   ├── lux_status.h
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   ├── metadata.h
+│   │   │   │   │   ├── noise_status.h
+│   │   │   │   │   ├── pdaf_data.h
+│   │   │   │   │   ├── region_stats.h
+│   │   │   │   │   ├── rpi
+│   │   │   │   │   │   ├── af.cpp
+│   │   │   │   │   │   ├── af.h
+│   │   │   │   │   │   ├── agc.cpp
+│   │   │   │   │   │   ├── agc.h
+│   │   │   │   │   │   ├── agc_channel.cpp
+│   │   │   │   │   │   ├── agc_channel.h
+│   │   │   │   │   │   ├── alsc.cpp
+│   │   │   │   │   │   ├── alsc.h
+│   │   │   │   │   │   ├── awb.cpp
+│   │   │   │   │   │   ├── awb.h
+│   │   │   │   │   │   ├── awb_bayes.cpp
+│   │   │   │   │   │   ├── awb_nn.cpp
+│   │   │   │   │   │   ├── black_level.cpp
+│   │   │   │   │   │   ├── black_level.h
+│   │   │   │   │   │   ├── cac.cpp
+│   │   │   │   │   │   ├── cac.h
+│   │   │   │   │   │   ├── ccm.cpp
+│   │   │   │   │   │   ├── ccm.h
+│   │   │   │   │   │   ├── contrast.cpp
+│   │   │   │   │   │   ├── contrast.h
+│   │   │   │   │   │   ├── decompand.cpp
+│   │   │   │   │   │   ├── decompand.h
+│   │   │   │   │   │   ├── denoise.cpp
+│   │   │   │   │   │   ├── denoise.h
+│   │   │   │   │   │   ├── dpc.cpp
+│   │   │   │   │   │   ├── dpc.h
+│   │   │   │   │   │   ├── focus.h
+│   │   │   │   │   │   ├── geq.cpp
+│   │   │   │   │   │   ├── geq.h
+│   │   │   │   │   │   ├── hdr.cpp
+│   │   │   │   │   │   ├── hdr.h
+│   │   │   │   │   │   ├── lux.cpp
+│   │   │   │   │   │   ├── lux.h
+│   │   │   │   │   │   ├── noise.cpp
+│   │   │   │   │   │   ├── noise.h
+│   │   │   │   │   │   ├── saturation.cpp
+│   │   │   │   │   │   ├── saturation.h
+│   │   │   │   │   │   ├── sdn.cpp
+│   │   │   │   │   │   ├── sdn.h
+│   │   │   │   │   │   ├── sharpen.cpp
+│   │   │   │   │   │   ├── sharpen.h
+│   │   │   │   │   │   ├── sync.cpp
+│   │   │   │   │   │   ├── sync.h
+│   │   │   │   │   │   ├── tonemap.cpp
+│   │   │   │   │   │   └── tonemap.h
+│   │   │   │   │   ├── saturation_status.h
+│   │   │   │   │   ├── sharpen_algorithm.h
+│   │   │   │   │   ├── sharpen_status.h
+│   │   │   │   │   ├── statistics.h
+│   │   │   │   │   ├── stitch_status.h
+│   │   │   │   │   ├── sync_algorithm.h
+│   │   │   │   │   ├── sync_status.h
+│   │   │   │   │   └── tonemap_status.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── pisp
+│   │   │   │   │   ├── data
+│   │   │   │   │   │   ├── imx219.json
+│   │   │   │   │   │   ├── imx219_noir.json
+│   │   │   │   │   │   ├── imx283.json
+│   │   │   │   │   │   ├── imx290.json
+│   │   │   │   │   │   ├── imx296.json
+│   │   │   │   │   │   ├── imx296_16mm.json
+│   │   │   │   │   │   ├── imx296_6mm.json
+│   │   │   │   │   │   ├── imx296_mono.json
+│   │   │   │   │   │   ├── imx335.json
+│   │   │   │   │   │   ├── imx378.json
+│   │   │   │   │   │   ├── imx415.json
+│   │   │   │   │   │   ├── imx415_b0569.json
+│   │   │   │   │   │   ├── imx462.json
+│   │   │   │   │   │   ├── imx477.json
+│   │   │   │   │   │   ├── imx477_16mm.json
+│   │   │   │   │   │   ├── imx477_6mm.json
+│   │   │   │   │   │   ├── imx477_noir.json
+│   │   │   │   │   │   ├── imx477_scientific.json
+│   │   │   │   │   │   ├── imx500.json
+│   │   │   │   │   │   ├── imx519.json
+│   │   │   │   │   │   ├── imx708.json
+│   │   │   │   │   │   ├── imx708_noir.json
+│   │   │   │   │   │   ├── imx708_wide.json
+│   │   │   │   │   │   ├── imx708_wide_noir.json
+│   │   │   │   │   │   ├── meson.build
+│   │   │   │   │   │   ├── ov5647.json
+│   │   │   │   │   │   ├── ov5647_noir.json
+│   │   │   │   │   │   ├── ov64a40.json
+│   │   │   │   │   │   ├── ov9281_mono.json
+│   │   │   │   │   │   ├── se327m12.json
+│   │   │   │   │   │   ├── uncalibrated.json
+│   │   │   │   │   │   ├── vd55g1.json
+│   │   │   │   │   │   ├── vd55g1_mono.json
+│   │   │   │   │   │   ├── vd56g3.json
+│   │   │   │   │   │   └── vd56g3_mono.json
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   └── pisp.cpp
+│   │   │   │   └── vc4
+│   │   │   │       ├── data
+│   │   │   │       │   ├── imx219.json
+│   │   │   │       │   ├── imx219_noir.json
+│   │   │   │       │   ├── imx283.json
+│   │   │   │       │   ├── imx290.json
+│   │   │   │       │   ├── imx296.json
+│   │   │   │       │   ├── imx296_mono.json
+│   │   │   │       │   ├── imx327.json
+│   │   │   │       │   ├── imx335.json
+│   │   │   │       │   ├── imx378.json
+│   │   │   │       │   ├── imx415.json
+│   │   │   │       │   ├── imx415_b0569.json
+│   │   │   │       │   ├── imx462.json
+│   │   │   │       │   ├── imx477.json
+│   │   │   │       │   ├── imx477_noir.json
+│   │   │   │       │   ├── imx477_scientific.json
+│   │   │   │       │   ├── imx477_v1.json
+│   │   │   │       │   ├── imx500.json
+│   │   │   │       │   ├── imx519.json
+│   │   │   │       │   ├── imx708.json
+│   │   │   │       │   ├── imx708_noir.json
+│   │   │   │       │   ├── imx708_wide.json
+│   │   │   │       │   ├── imx708_wide_noir.json
+│   │   │   │       │   ├── meson.build
+│   │   │   │       │   ├── ov5647.json
+│   │   │   │       │   ├── ov5647_noir.json
+│   │   │   │       │   ├── ov64a40.json
+│   │   │   │       │   ├── ov7251_mono.json
+│   │   │   │       │   ├── ov9281_mono.json
+│   │   │   │       │   ├── se327m12.json
+│   │   │   │       │   ├── uncalibrated.json
+│   │   │   │       │   ├── vd55g1.json
+│   │   │   │       │   ├── vd55g1_mono.json
+│   │   │   │       │   ├── vd56g3.json
+│   │   │   │       │   └── vd56g3_mono.json
+│   │   │   │       ├── meson.build
+│   │   │   │       └── vc4.cpp
+│   │   │   ├── simple
+│   │   │   │   ├── algorithms
+│   │   │   │   │   ├── adjust.cpp
+│   │   │   │   │   ├── adjust.h
+│   │   │   │   │   ├── agc.cpp
+│   │   │   │   │   ├── agc.h
+│   │   │   │   │   ├── algorithm.h
+│   │   │   │   │   ├── awb.cpp
+│   │   │   │   │   ├── awb.h
+│   │   │   │   │   ├── blc.cpp
+│   │   │   │   │   ├── blc.h
+│   │   │   │   │   ├── ccm.cpp
+│   │   │   │   │   ├── ccm.h
+│   │   │   │   │   └── meson.build
+│   │   │   │   ├── data
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   └── uncalibrated.yaml
+│   │   │   │   ├── ipa_context.cpp
+│   │   │   │   ├── ipa_context.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── module.h
+│   │   │   │   └── soft_simple.cpp
+│   │   │   └── vimc
+│   │   │       ├── data
+│   │   │       │   ├── meson.build
+│   │   │       │   └── vimc.conf
+│   │   │       ├── meson.build
+│   │   │       └── vimc.cpp
+│   │   ├── libcamera
+│   │   │   ├── base
+│   │   │   │   ├── backtrace.cpp
+│   │   │   │   ├── bound_method.cpp
+│   │   │   │   ├── class.cpp
+│   │   │   │   ├── event_dispatcher.cpp
+│   │   │   │   ├── event_dispatcher_poll.cpp
+│   │   │   │   ├── event_notifier.cpp
+│   │   │   │   ├── file.cpp
+│   │   │   │   ├── flags.cpp
+│   │   │   │   ├── log.cpp
+│   │   │   │   ├── memfd.cpp
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── message.cpp
+│   │   │   │   ├── mutex.cpp
+│   │   │   │   ├── object.cpp
+│   │   │   │   ├── semaphore.cpp
+│   │   │   │   ├── shared_fd.cpp
+│   │   │   │   ├── signal.cpp
+│   │   │   │   ├── thread.cpp
+│   │   │   │   ├── timer.cpp
+│   │   │   │   ├── unique_fd.cpp
+│   │   │   │   └── utils.cpp
+│   │   │   ├── bayer_format.cpp
+│   │   │   ├── byte_stream_buffer.cpp
+│   │   │   ├── camera.cpp
+│   │   │   ├── camera_controls.cpp
+│   │   │   ├── camera_lens.cpp
+│   │   │   ├── camera_manager.cpp
+│   │   │   ├── clock_recovery.cpp
+│   │   │   ├── color_space.cpp
+│   │   │   ├── control_ids.cpp.in
+│   │   │   ├── control_ids_core.yaml
+│   │   │   ├── control_ids_debug.yaml
+│   │   │   ├── control_ids_draft.yaml
+│   │   │   ├── control_ids_rpi.yaml
+│   │   │   ├── control_ranges.yaml
+│   │   │   ├── control_serializer.cpp
+│   │   │   ├── control_validator.cpp
+│   │   │   ├── controls.cpp
+│   │   │   ├── converter
+│   │   │   │   ├── converter_dw100.cpp
+│   │   │   │   ├── converter_dw100_vertexmap.cpp
+│   │   │   │   ├── converter_v4l2_m2m.cpp
+│   │   │   │   └── meson.build
+│   │   │   ├── converter.cpp
+│   │   │   ├── debug_controls.cpp
+│   │   │   ├── delayed_controls.cpp
+│   │   │   ├── device_enumerator.cpp
+│   │   │   ├── device_enumerator_sysfs.cpp
+│   │   │   ├── device_enumerator_udev.cpp
+│   │   │   ├── dma_buf_allocator.cpp
+│   │   │   ├── egl.cpp
+│   │   │   ├── fence.cpp
+│   │   │   ├── formats.cpp
+│   │   │   ├── formats.yaml
+│   │   │   ├── framebuffer.cpp
+│   │   │   ├── framebuffer_allocator.cpp
+│   │   │   ├── geometry.cpp
+│   │   │   ├── global_configuration.cpp
+│   │   │   ├── ipa
+│   │   │   │   └── meson.build
+│   │   │   ├── ipa_controls.cpp
+│   │   │   ├── ipa_data_serializer.cpp
+│   │   │   ├── ipa_interface.cpp
+│   │   │   ├── ipa_manager.cpp
+│   │   │   ├── ipa_module.cpp
+│   │   │   ├── ipa_proxy.cpp
+│   │   │   ├── ipa_pub_key.cpp.in
+│   │   │   ├── ipc_pipe.cpp
+│   │   │   ├── ipc_pipe_unixsocket.cpp
+│   │   │   ├── ipc_unixsocket.cpp
+│   │   │   ├── mapped_framebuffer.cpp
+│   │   │   ├── matrix.cpp
+│   │   │   ├── media_device.cpp
+│   │   │   ├── media_object.cpp
+│   │   │   ├── media_pipeline.cpp
+│   │   │   ├── meson.build
+│   │   │   ├── orientation.cpp
+│   │   │   ├── pipeline
+│   │   │   │   ├── imx8-isi
+│   │   │   │   │   ├── imx8-isi.cpp
+│   │   │   │   │   └── meson.build
+│   │   │   │   ├── ipu3
+│   │   │   │   │   ├── cio2.cpp
+│   │   │   │   │   ├── cio2.h
+│   │   │   │   │   ├── frames.cpp
+│   │   │   │   │   ├── frames.h
+│   │   │   │   │   ├── imgu.cpp
+│   │   │   │   │   ├── imgu.h
+│   │   │   │   │   ├── ipu3.cpp
+│   │   │   │   │   └── meson.build
+│   │   │   │   ├── mali-c55
+│   │   │   │   │   ├── mali-c55.cpp
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   ├── rzg2l-cru.cpp
+│   │   │   │   │   └── rzg2l-cru.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── rkisp1
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   ├── rkisp1.cpp
+│   │   │   │   │   ├── rkisp1_path.cpp
+│   │   │   │   │   └── rkisp1_path.h
+│   │   │   │   ├── rpi
+│   │   │   │   │   ├── common
+│   │   │   │   │   │   ├── delayed_controls.cpp
+│   │   │   │   │   │   ├── delayed_controls.h
+│   │   │   │   │   │   ├── meson.build
+│   │   │   │   │   │   ├── pipeline_base.cpp
+│   │   │   │   │   │   ├── pipeline_base.h
+│   │   │   │   │   │   ├── rpi_stream.cpp
+│   │   │   │   │   │   └── rpi_stream.h
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   ├── pisp
+│   │   │   │   │   │   ├── data
+│   │   │   │   │   │   │   ├── example.yaml
+│   │   │   │   │   │   │   └── meson.build
+│   │   │   │   │   │   ├── meson.build
+│   │   │   │   │   │   └── pisp.cpp
+│   │   │   │   │   └── vc4
+│   │   │   │   │       ├── data
+│   │   │   │   │       │   ├── example.yaml
+│   │   │   │   │       │   ├── meson.build
+│   │   │   │   │       │   └── rpi_apps.yaml
+│   │   │   │   │       ├── meson.build
+│   │   │   │   │       └── vc4.cpp
+│   │   │   │   ├── simple
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   └── simple.cpp
+│   │   │   │   ├── uvcvideo
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   └── uvcvideo.cpp
+│   │   │   │   ├── vimc
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   └── vimc.cpp
+│   │   │   │   └── virtual
+│   │   │   │       ├── README.md
+│   │   │   │       ├── config_parser.cpp
+│   │   │   │       ├── config_parser.h
+│   │   │   │       ├── data
+│   │   │   │       │   ├── meson.build
+│   │   │   │       │   └── virtual.yaml
+│   │   │   │       ├── frame_generator.h
+│   │   │   │       ├── image_frame_generator.cpp
+│   │   │   │       ├── image_frame_generator.h
+│   │   │   │       ├── meson.build
+│   │   │   │       ├── test_pattern_generator.cpp
+│   │   │   │       ├── test_pattern_generator.h
+│   │   │   │       ├── virtual.cpp
+│   │   │   │       └── virtual.h
+│   │   │   ├── pipeline_handler.cpp
+│   │   │   ├── pixel_format.cpp
+│   │   │   ├── process.cpp
+│   │   │   ├── property_ids_core.yaml
+│   │   │   ├── property_ids_draft.yaml
+│   │   │   ├── proxy
+│   │   │   │   ├── meson.build
+│   │   │   │   └── worker
+│   │   │   │       └── meson.build
+│   │   │   ├── pub_key.cpp
+│   │   │   ├── request.cpp
+│   │   │   ├── sensor
+│   │   │   │   ├── camera_sensor.cpp
+│   │   │   │   ├── camera_sensor_legacy.cpp
+│   │   │   │   ├── camera_sensor_properties.cpp
+│   │   │   │   ├── camera_sensor_raw.cpp
+│   │   │   │   └── meson.build
+│   │   │   ├── shaders
+│   │   │   │   ├── RGB.frag
+│   │   │   │   ├── YUV_2_planes.frag
+│   │   │   │   ├── YUV_3_planes.frag
+│   │   │   │   ├── YUV_packed.frag
+│   │   │   │   ├── bayer_1x_packed.frag
+│   │   │   │   ├── bayer_unpacked.frag
+│   │   │   │   ├── bayer_unpacked.vert
+│   │   │   │   ├── identity.vert
+│   │   │   │   └── meson.build
+│   │   │   ├── shared_mem_object.cpp
+│   │   │   ├── software_isp
+│   │   │   │   ├── TODO.md
+│   │   │   │   ├── benchmark.cpp
+│   │   │   │   ├── debayer.cpp
+│   │   │   │   ├── debayer.h
+│   │   │   │   ├── debayer_cpu.cpp
+│   │   │   │   ├── debayer_cpu.h
+│   │   │   │   ├── debayer_egl.cpp
+│   │   │   │   ├── debayer_egl.h
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── software_isp.cpp
+│   │   │   │   └── swstats_cpu.cpp
+│   │   │   ├── source_paths.cpp
+│   │   │   ├── stream.cpp
+│   │   │   ├── sysfs.cpp
+│   │   │   ├── tracepoints.cpp
+│   │   │   ├── transform.cpp
+│   │   │   ├── v4l2_device.cpp
+│   │   │   ├── v4l2_pixelformat.cpp
+│   │   │   ├── v4l2_request.cpp
+│   │   │   ├── v4l2_subdevice.cpp
+│   │   │   ├── v4l2_videodevice.cpp
+│   │   │   ├── value_node.cpp
+│   │   │   ├── vector.cpp
+│   │   │   ├── version.cpp.in
+│   │   │   └── yaml_parser.cpp
+│   │   ├── meson.build
+│   │   ├── py
+│   │   │   ├── cam
+│   │   │   │   ├── cam.py
+│   │   │   │   ├── cam_kms.py
+│   │   │   │   ├── cam_null.py
+│   │   │   │   ├── cam_qt.py
+│   │   │   │   ├── cam_qtgl.py
+│   │   │   │   ├── gl_helpers.py
+│   │   │   │   └── helpers.py
+│   │   │   ├── examples
+│   │   │   │   ├── simple-cam.py
+│   │   │   │   ├── simple-capture.py
+│   │   │   │   └── simple-continuous-capture.py
+│   │   │   ├── libcamera
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── gen-py-controls.py
+│   │   │   │   ├── gen-py-formats.py
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── py_camera_manager.cpp
+│   │   │   │   ├── py_camera_manager.h
+│   │   │   │   ├── py_color_space.cpp
+│   │   │   │   ├── py_controls_generated.cpp.in
+│   │   │   │   ├── py_enums.cpp
+│   │   │   │   ├── py_formats_generated.cpp.in
+│   │   │   │   ├── py_geometry.cpp
+│   │   │   │   ├── py_helpers.cpp
+│   │   │   │   ├── py_helpers.h
+│   │   │   │   ├── py_main.cpp
+│   │   │   │   ├── py_main.h
+│   │   │   │   ├── py_transform.cpp
+│   │   │   │   └── utils
+│   │   │   │       ├── MappedFrameBuffer.py
+│   │   │   │       └── __init__.py
+│   │   │   └── meson.build
+│   │   └── v4l2
+│   │       ├── libcamerify.in
+│   │       ├── meson.build
+│   │       ├── v4l2_camera.cpp
+│   │       ├── v4l2_camera.h
+│   │       ├── v4l2_camera_file.cpp
+│   │       ├── v4l2_camera_file.h
+│   │       ├── v4l2_camera_proxy.cpp
+│   │       ├── v4l2_camera_proxy.h
+│   │       ├── v4l2_compat.cpp
+│   │       ├── v4l2_compat_manager.cpp
+│   │       └── v4l2_compat_manager.h
+│   ├── subprojects
+│   │   ├── .gitignore
+│   │   ├── gtest.wrap
+│   │   ├── libpisp
+│   │   │   ├── .clang-format
+│   │   │   ├── .github
+│   │   │   │   └── workflows
+│   │   │   │       ├── camera-test-libpisp.yml
+│   │   │   │       ├── gen_orig.yml
+│   │   │   │       └── libpisp-style-checker.yml
+│   │   │   ├── .gitignore
+│   │   │   ├── .gitlint
+│   │   │   ├── .meson-subproject-wrap-hash.txt
+│   │   │   ├── .pre-commit-config.yaml
+│   │   │   ├── LICENSE -> LICENSES/BSD-2-Clause.txt
+│   │   │   ├── LICENSES
+│   │   │   │   ├── BSD-2-Clause.txt
+│   │   │   │   ├── CC0-1.0.txt
+│   │   │   │   ├── GPL-2.0-only.txt
+│   │   │   │   ├── GPL-2.0-or-later.txt
+│   │   │   │   ├── Linux-syscall-note.txt
+│   │   │   │   └── MIT.txt
+│   │   │   ├── README.md
+│   │   │   ├── meson.build
+│   │   │   ├── meson_options.txt
+│   │   │   ├── src
+│   │   │   │   ├── examples
+│   │   │   │   │   ├── convert.cpp
+│   │   │   │   │   └── meson.build
+│   │   │   │   ├── gst
+│   │   │   │   │   ├── gstpispconvert.cpp
+│   │   │   │   │   ├── gstpispconvert.h
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   └── usage.md
+│   │   │   │   ├── helpers
+│   │   │   │   │   ├── backend_device.cpp
+│   │   │   │   │   ├── backend_device.hpp
+│   │   │   │   │   ├── buffer.cpp
+│   │   │   │   │   ├── buffer.hpp
+│   │   │   │   │   ├── device_fd.hpp
+│   │   │   │   │   ├── dma_heap.hpp
+│   │   │   │   │   ├── media_device.cpp
+│   │   │   │   │   ├── media_device.hpp
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   ├── v4l2_device.cpp
+│   │   │   │   │   └── v4l2_device.hpp
+│   │   │   │   ├── libpisp
+│   │   │   │   │   ├── backend
+│   │   │   │   │   │   ├── backend.cpp
+│   │   │   │   │   │   ├── backend.hpp
+│   │   │   │   │   │   ├── backend_debug.cpp
+│   │   │   │   │   │   ├── backend_default_config.cpp
+│   │   │   │   │   │   ├── backend_default_config.json
+│   │   │   │   │   │   ├── backend_prepare.cpp
+│   │   │   │   │   │   ├── meson.build
+│   │   │   │   │   │   ├── pisp_be_config.h
+│   │   │   │   │   │   └── tiling
+│   │   │   │   │   │       ├── README.txt
+│   │   │   │   │   │       ├── context_stage.cpp
+│   │   │   │   │   │       ├── context_stage.hpp
+│   │   │   │   │   │       ├── crop_stage.cpp
+│   │   │   │   │   │       ├── crop_stage.hpp
+│   │   │   │   │   │       ├── input_stage.cpp
+│   │   │   │   │   │       ├── input_stage.hpp
+│   │   │   │   │   │       ├── meson.build
+│   │   │   │   │   │       ├── output_stage.cpp
+│   │   │   │   │   │       ├── output_stage.hpp
+│   │   │   │   │   │       ├── pipeline.cpp
+│   │   │   │   │   │       ├── pipeline.hpp
+│   │   │   │   │   │       ├── pisp_tiling.cpp
+│   │   │   │   │   │       ├── pisp_tiling.hpp
+│   │   │   │   │   │       ├── rescale_stage.cpp
+│   │   │   │   │   │       ├── rescale_stage.hpp
+│   │   │   │   │   │       ├── split_stage.cpp
+│   │   │   │   │   │       ├── split_stage.hpp
+│   │   │   │   │   │       ├── stages.cpp
+│   │   │   │   │   │       ├── stages.hpp
+│   │   │   │   │   │       ├── tiling.hpp
+│   │   │   │   │   │       └── types.hpp
+│   │   │   │   │   ├── common
+│   │   │   │   │   │   ├── logging.hpp
+│   │   │   │   │   │   ├── meson.build
+│   │   │   │   │   │   ├── pisp_common.h
+│   │   │   │   │   │   ├── pisp_logging.cpp
+│   │   │   │   │   │   ├── pisp_pwl.cpp
+│   │   │   │   │   │   ├── pisp_pwl.hpp
+│   │   │   │   │   │   ├── pisp_utils.cpp
+│   │   │   │   │   │   ├── shm_mutex.hpp
+│   │   │   │   │   │   ├── utils.hpp
+│   │   │   │   │   │   └── version.hpp
+│   │   │   │   │   ├── frontend
+│   │   │   │   │   │   ├── frontend.cpp
+│   │   │   │   │   │   ├── frontend.hpp
+│   │   │   │   │   │   ├── meson.build
+│   │   │   │   │   │   ├── pisp_fe_config.h
+│   │   │   │   │   │   └── pisp_statistics.h
+│   │   │   │   │   ├── meson.build
+│   │   │   │   │   └── variants
+│   │   │   │   │       ├── meson.build
+│   │   │   │   │       ├── variant.cpp
+│   │   │   │   │       └── variant.hpp
+│   │   │   │   └── meson.build
+│   │   │   ├── subprojects
+│   │   │   │   ├── cxxopts.wrap
+│   │   │   │   └── nlohmann_json.wrap
+│   │   │   └── utils
+│   │   │       ├── colourspace_calcs.py
+│   │   │       ├── generate_filter.py
+│   │   │       ├── libpisp.wrap
+│   │   │       ├── test_convert.py
+│   │   │       ├── version.cpp.in
+│   │   │       └── version.py
+│   │   ├── libpisp.wrap
+│   │   ├── libyaml.wrap
+│   │   ├── libyuv.wrap
+│   │   ├── nlohmann_json-3.12.0
+│   │   │   ├── .meson-subproject-wrap-hash.txt
+│   │   │   ├── BUILD.bazel
+│   │   │   ├── LICENSE.MIT
+│   │   │   ├── include
+│   │   │   │   └── nlohmann
+│   │   │   │       ├── adl_serializer.hpp
+│   │   │   │       ├── byte_container_with_subtype.hpp
+│   │   │   │       ├── detail
+│   │   │   │       │   ├── abi_macros.hpp
+│   │   │   │       │   ├── conversions
+│   │   │   │       │   │   ├── from_json.hpp
+│   │   │   │       │   │   ├── to_chars.hpp
+│   │   │   │       │   │   └── to_json.hpp
+│   │   │   │       │   ├── exceptions.hpp
+│   │   │   │       │   ├── hash.hpp
+│   │   │   │       │   ├── input
+│   │   │   │       │   │   ├── binary_reader.hpp
+│   │   │   │       │   │   ├── input_adapters.hpp
+│   │   │   │       │   │   ├── json_sax.hpp
+│   │   │   │       │   │   ├── lexer.hpp
+│   │   │   │       │   │   ├── parser.hpp
+│   │   │   │       │   │   └── position_t.hpp
+│   │   │   │       │   ├── iterators
+│   │   │   │       │   │   ├── internal_iterator.hpp
+│   │   │   │       │   │   ├── iter_impl.hpp
+│   │   │   │       │   │   ├── iteration_proxy.hpp
+│   │   │   │       │   │   ├── iterator_traits.hpp
+│   │   │   │       │   │   ├── json_reverse_iterator.hpp
+│   │   │   │       │   │   └── primitive_iterator.hpp
+│   │   │   │       │   ├── json_custom_base_class.hpp
+│   │   │   │       │   ├── json_pointer.hpp
+│   │   │   │       │   ├── json_ref.hpp
+│   │   │   │       │   ├── macro_scope.hpp
+│   │   │   │       │   ├── macro_unscope.hpp
+│   │   │   │       │   ├── meta
+│   │   │   │       │   │   ├── call_std
+│   │   │   │       │   │   │   ├── begin.hpp
+│   │   │   │       │   │   │   └── end.hpp
+│   │   │   │       │   │   ├── cpp_future.hpp
+│   │   │   │       │   │   ├── detected.hpp
+│   │   │   │       │   │   ├── identity_tag.hpp
+│   │   │   │       │   │   ├── is_sax.hpp
+│   │   │   │       │   │   ├── std_fs.hpp
+│   │   │   │       │   │   ├── type_traits.hpp
+│   │   │   │       │   │   └── void_t.hpp
+│   │   │   │       │   ├── output
+│   │   │   │       │   │   ├── binary_writer.hpp
+│   │   │   │       │   │   ├── output_adapters.hpp
+│   │   │   │       │   │   └── serializer.hpp
+│   │   │   │       │   ├── string_concat.hpp
+│   │   │   │       │   ├── string_escape.hpp
+│   │   │   │       │   ├── string_utils.hpp
+│   │   │   │       │   └── value_t.hpp
+│   │   │   │       ├── json.hpp
+│   │   │   │       ├── json_fwd.hpp
+│   │   │   │       ├── ordered_map.hpp
+│   │   │   │       └── thirdparty
+│   │   │   │           └── hedley
+│   │   │   │               ├── hedley.hpp
+│   │   │   │               └── hedley_undef.hpp
+│   │   │   ├── meson.build
+│   │   │   └── single_include
+│   │   │       └── nlohmann
+│   │   │           ├── json.hpp
+│   │   │           └── json_fwd.hpp
+│   │   ├── nlohmann_json.wrap
+│   │   ├── packagecache
+│   │   │   └── nlohmann_json-3.12.0.zip
+│   │   └── packagefiles
+│   │       └── libyuv
+│   │           └── 0004-CMakeLists.txt-Do-not-enable-NEON-for-armel-armhf.patch
+│   ├── test
+│   │   ├── bayer-format.cpp
+│   │   ├── byte-stream-buffer.cpp
+│   │   ├── camera
+│   │   │   ├── buffer_import.cpp
+│   │   │   ├── camera_reconfigure.cpp
+│   │   │   ├── capture.cpp
+│   │   │   ├── configuration_default.cpp
+│   │   │   ├── configuration_set.cpp
+│   │   │   ├── meson.build
+│   │   │   └── statemachine.cpp
+│   │   ├── camera-sensor.cpp
+│   │   ├── color-space.cpp
+│   │   ├── controls
+│   │   │   ├── control_info.cpp
+│   │   │   ├── control_info_map.cpp
+│   │   │   ├── control_list.cpp
+│   │   │   ├── control_value.cpp
+│   │   │   └── meson.build
+│   │   ├── delayed_controls.cpp
+│   │   ├── event-dispatcher.cpp
+│   │   ├── event-thread.cpp
+│   │   ├── event.cpp
+│   │   ├── fence.cpp
+│   │   ├── file.cpp
+│   │   ├── flags.cpp
+│   │   ├── geometry.cpp
+│   │   ├── gstreamer
+│   │   │   ├── gstreamer_device_provider_test.cpp
+│   │   │   ├── gstreamer_memory_lifetime_test.cpp
+│   │   │   ├── gstreamer_multi_stream_test.cpp
+│   │   │   ├── gstreamer_single_stream_test.cpp
+│   │   │   ├── gstreamer_test.cpp
+│   │   │   ├── gstreamer_test.h
+│   │   │   └── meson.build
+│   │   ├── hotplug-cameras.cpp
+│   │   ├── ipa
+│   │   │   ├── ipa_interface_test.cpp
+│   │   │   ├── ipa_module_test.cpp
+│   │   │   ├── libipa
+│   │   │   │   ├── fixedpoint.cpp
+│   │   │   │   ├── histogram.cpp
+│   │   │   │   ├── interpolator.cpp
+│   │   │   │   ├── meson.build
+│   │   │   │   ├── pwl.cpp
+│   │   │   │   └── quantized.cpp
+│   │   │   └── meson.build
+│   │   ├── ipc
+│   │   │   ├── meson.build
+│   │   │   ├── unixsocket.cpp
+│   │   │   └── unixsocket_ipc.cpp
+│   │   ├── libtest
+│   │   │   ├── buffer_source.cpp
+│   │   │   ├── buffer_source.h
+│   │   │   ├── camera_test.cpp
+│   │   │   ├── camera_test.h
+│   │   │   ├── meson.build
+│   │   │   ├── test.cpp
+│   │   │   └── test.h
+│   │   ├── log
+│   │   │   ├── log_api.cpp
+│   │   │   ├── log_process.cpp
+│   │   │   └── meson.build
+│   │   ├── mapped-buffer.cpp
+│   │   ├── matrix.cpp
+│   │   ├── media_device
+│   │   │   ├── media_device_acquire.cpp
+│   │   │   ├── media_device_link_test.cpp
+│   │   │   ├── media_device_print_test.cpp
+│   │   │   ├── media_device_test.cpp
+│   │   │   ├── media_device_test.h
+│   │   │   └── meson.build
+│   │   ├── meson.build
+│   │   ├── message.cpp
+│   │   ├── object-delete.cpp
+│   │   ├── object-invoke.cpp
+│   │   ├── object.cpp
+│   │   ├── pixel-format.cpp
+│   │   ├── process
+│   │   │   ├── meson.build
+│   │   │   └── process_test.cpp
+│   │   ├── public-api.cpp
+│   │   ├── py
+│   │   │   ├── meson.build
+│   │   │   └── unittests.py
+│   │   ├── serialization
+│   │   │   ├── control_serialization.cpp
+│   │   │   ├── generated_serializer
+│   │   │   │   ├── generated_serializer_test.cpp
+│   │   │   │   ├── include
+│   │   │   │   │   └── libcamera
+│   │   │   │   │       └── ipa
+│   │   │   │   │           ├── meson.build
+│   │   │   │   │           └── test.mojom
+│   │   │   │   └── meson.build
+│   │   │   ├── ipa_data_serializer_test.cpp
+│   │   │   ├── meson.build
+│   │   │   ├── serialization_test.cpp
+│   │   │   └── serialization_test.h
+│   │   ├── shared-fd.cpp
+│   │   ├── signal-threads.cpp
+│   │   ├── signal.cpp
+│   │   ├── span.cpp
+│   │   ├── stream
+│   │   │   ├── meson.build
+│   │   │   ├── stream_colorspace.cpp
+│   │   │   └── stream_formats.cpp
+│   │   ├── threads.cpp
+│   │   ├── timer-fail.cpp
+│   │   ├── timer-thread.cpp
+│   │   ├── timer.cpp
+│   │   ├── transform.cpp
+│   │   ├── unique-fd.cpp
+│   │   ├── utils.cpp
+│   │   ├── v4l2_compat
+│   │   │   ├── meson.build
+│   │   │   └── v4l2_compat_test.py
+│   │   ├── v4l2_subdevice
+│   │   │   ├── list_formats.cpp
+│   │   │   ├── meson.build
+│   │   │   ├── test_formats.cpp
+│   │   │   ├── v4l2_subdevice_test.cpp
+│   │   │   └── v4l2_subdevice_test.h
+│   │   ├── v4l2_videodevice
+│   │   │   ├── buffer_cache.cpp
+│   │   │   ├── buffer_sharing.cpp
+│   │   │   ├── capture_async.cpp
+│   │   │   ├── controls.cpp
+│   │   │   ├── dequeue_watchdog.cpp
+│   │   │   ├── double_open.cpp
+│   │   │   ├── formats.cpp
+│   │   │   ├── meson.build
+│   │   │   ├── request_buffers.cpp
+│   │   │   ├── stream_on_off.cpp
+│   │   │   ├── v4l2_m2mdevice.cpp
+│   │   │   ├── v4l2_videodevice_test.cpp
+│   │   │   └── v4l2_videodevice_test.h
+│   │   ├── value-node.cpp
+│   │   ├── vector.cpp
+│   │   └── yaml-parser.cpp
+│   └── utils
+│       ├── abi-compat.sh
+│       ├── checkstyle.py
+│       ├── codegen
+│       │   ├── controls.py
+│       │   ├── gen-controls.py
+│       │   ├── gen-formats.py
+│       │   ├── gen-gst-controls.py
+│       │   ├── gen-header.sh
+│       │   ├── gen-ipa-pub-key.py
+│       │   ├── gen-tp-header.py
+│       │   ├── ipc
+│       │   │   ├── extract-docs.py
+│       │   │   ├── generate.py
+│       │   │   ├── generators
+│       │   │   │   ├── __init__.py
+│       │   │   │   ├── libcamera_templates
+│       │   │   │   │   ├── core_ipa_interface.h.tmpl
+│       │   │   │   │   ├── core_ipa_serializer.h.tmpl
+│       │   │   │   │   ├── definition_functions.tmpl
+│       │   │   │   │   ├── meson.build
+│       │   │   │   │   ├── module_ipa_interface.h.tmpl
+│       │   │   │   │   ├── module_ipa_proxy.cpp.tmpl
+│       │   │   │   │   ├── module_ipa_proxy.h.tmpl
+│       │   │   │   │   ├── module_ipa_proxy_worker.cpp.tmpl
+│       │   │   │   │   ├── module_ipa_serializer.h.tmpl
+│       │   │   │   │   ├── proxy_functions.tmpl
+│       │   │   │   │   └── serializer.tmpl
+│       │   │   │   ├── meson.build
+│       │   │   │   └── mojom_libcamera_generator.py
+│       │   │   ├── meson.build
+│       │   │   ├── mojo
+│       │   │   │   ├── README
+│       │   │   │   └── public
+│       │   │   │       ├── LICENSE
+│       │   │   │       └── tools
+│       │   │   │           ├── .style.yapf
+│       │   │   │           ├── BUILD.gn
+│       │   │   │           ├── bindings
+│       │   │   │           │   ├── BUILD.gn
+│       │   │   │           │   ├── README.md
+│       │   │   │           │   ├── checks
+│       │   │   │           │   │   ├── __init__.py
+│       │   │   │           │   │   ├── mojom_attributes_check.py
+│       │   │   │           │   │   ├── mojom_attributes_check_unittest.py
+│       │   │   │           │   │   ├── mojom_definitions_check.py
+│       │   │   │           │   │   ├── mojom_interface_feature_check.py
+│       │   │   │           │   │   ├── mojom_interface_feature_check_unittest.py
+│       │   │   │           │   │   ├── mojom_restrictions_check.py
+│       │   │   │           │   │   └── mojom_restrictions_checks_unittest.py
+│       │   │   │           │   ├── concatenate-files.py
+│       │   │   │           │   ├── concatenate_and_replace_closure_exports.py
+│       │   │   │           │   ├── gen_data_files_list.py
+│       │   │   │           │   ├── generate_type_mappings.py
+│       │   │   │           │   ├── minify_with_terser.py
+│       │   │   │           │   ├── mojom.gni
+│       │   │   │           │   ├── mojom_bindings_generator.py
+│       │   │   │           │   ├── mojom_bindings_generator_unittest.py
+│       │   │   │           │   └── validate_typemap_config.py
+│       │   │   │           ├── mojom
+│       │   │   │           │   ├── BUILD.gn
+│       │   │   │           │   ├── README.md
+│       │   │   │           │   ├── check_stable_mojom_compatibility.py
+│       │   │   │           │   ├── check_stable_mojom_compatibility_unittest.py
+│       │   │   │           │   ├── const_unittest.py
+│       │   │   │           │   ├── enum_unittest.py
+│       │   │   │           │   ├── feature_unittest.py
+│       │   │   │           │   ├── mojom
+│       │   │   │           │   │   ├── BUILD.gn
+│       │   │   │           │   │   ├── __init__.py
+│       │   │   │           │   │   ├── error.py
+│       │   │   │           │   │   ├── fileutil.py
+│       │   │   │           │   │   ├── fileutil_unittest.py
+│       │   │   │           │   │   ├── generate
+│       │   │   │           │   │   │   ├── __init__.py
+│       │   │   │           │   │   │   ├── check.py
+│       │   │   │           │   │   │   ├── generator.py
+│       │   │   │           │   │   │   ├── generator_unittest.py
+│       │   │   │           │   │   │   ├── module.py
+│       │   │   │           │   │   │   ├── module_unittest.py
+│       │   │   │           │   │   │   ├── pack.py
+│       │   │   │           │   │   │   ├── pack_unittest.py
+│       │   │   │           │   │   │   ├── template_expander.py
+│       │   │   │           │   │   │   ├── translate.py
+│       │   │   │           │   │   │   └── translate_unittest.py
+│       │   │   │           │   │   └── parse
+│       │   │   │           │   │       ├── __init__.py
+│       │   │   │           │   │       ├── ast.py
+│       │   │   │           │   │       ├── ast_unittest.py
+│       │   │   │           │   │       ├── conditional_features.py
+│       │   │   │           │   │       ├── conditional_features_unittest.py
+│       │   │   │           │   │       ├── lexer.py
+│       │   │   │           │   │       ├── lexer_unittest.py
+│       │   │   │           │   │       ├── parser.py
+│       │   │   │           │   │       └── parser_unittest.py
+│       │   │   │           │   ├── mojom_parser.py
+│       │   │   │           │   ├── mojom_parser_test_case.py
+│       │   │   │           │   ├── mojom_parser_unittest.py
+│       │   │   │           │   ├── stable_attribute_unittest.py
+│       │   │   │           │   ├── union_unittest.py
+│       │   │   │           │   └── version_compatibility_unittest.py
+│       │   │   │           └── run_all_python_unittests.py
+│       │   │   ├── parser.py
+│       │   │   └── tools
+│       │   │       ├── README
+│       │   │       └── diagnosis
+│       │   │           └── crbug_1001171.py
+│       │   └── meson.build
+│       ├── gen-debug-controls.py
+│       ├── gen-ipa-priv-key.sh
+│       ├── gen-shader-header.py
+│       ├── gen-shader-headers.sh
+│       ├── gen-version.sh
+│       ├── hooks
+│       │   ├── post-commit
+│       │   ├── pre-commit
+│       │   └── pre-push
+│       ├── ipu3
+│       │   ├── ipu3-capture.sh
+│       │   ├── ipu3-pack.c
+│       │   ├── ipu3-process.sh
+│       │   ├── ipu3-unpack.c
+│       │   └── meson.build
+│       ├── libcamera-bug-report
+│       ├── meson.build
+│       ├── raspberrypi
+│       │   └── ctt
+│       │       ├── README.md
+│       │       └── cac_chart.pdf
+│       ├── release.sh
+│       ├── rkisp1
+│       │   ├── gen-csc-table.py
+│       │   └── rkisp1-capture.sh
+│       ├── run-dist.sh
+│       ├── semver
+│       ├── tracepoints
+│       │   └── analyze-ipa-trace.py
+│       ├── tuning
+│       │   ├── README.rst
+│       │   ├── config-example.yaml
+│       │   ├── libtuning
+│       │   │   ├── __init__.py
+│       │   │   ├── average.py
+│       │   │   ├── ctt_awb.py
+│       │   │   ├── ctt_ccm.py
+│       │   │   ├── ctt_colors.py
+│       │   │   ├── ctt_ransac.py
+│       │   │   ├── generators
+│       │   │   │   ├── __init__.py
+│       │   │   │   ├── generator.py
+│       │   │   │   ├── raspberrypi_output.py
+│       │   │   │   └── yaml_output.py
+│       │   │   ├── gradient.py
+│       │   │   ├── image.py
+│       │   │   ├── libtuning.py
+│       │   │   ├── macbeth.py
+│       │   │   ├── macbeth_ref.pgm
+│       │   │   ├── modules
+│       │   │   │   ├── __init__.py
+│       │   │   │   ├── agc
+│       │   │   │   │   ├── __init__.py
+│       │   │   │   │   ├── agc.py
+│       │   │   │   │   └── rkisp1.py
+│       │   │   │   ├── awb
+│       │   │   │   │   ├── __init__.py
+│       │   │   │   │   ├── awb.py
+│       │   │   │   │   └── rkisp1.py
+│       │   │   │   ├── ccm
+│       │   │   │   │   ├── __init__.py
+│       │   │   │   │   ├── ccm.py
+│       │   │   │   │   └── rkisp1.py
+│       │   │   │   ├── lsc
+│       │   │   │   │   ├── __init__.py
+│       │   │   │   │   ├── lsc.py
+│       │   │   │   │   ├── raspberrypi.py
+│       │   │   │   │   └── rkisp1.py
+│       │   │   │   ├── lux
+│       │   │   │   │   ├── __init__.py
+│       │   │   │   │   ├── lux.py
+│       │   │   │   │   └── rkisp1.py
+│       │   │   │   ├── module.py
+│       │   │   │   └── static.py
+│       │   │   ├── parsers
+│       │   │   │   ├── __init__.py
+│       │   │   │   ├── parser.py
+│       │   │   │   ├── raspberrypi_parser.py
+│       │   │   │   └── yaml_parser.py
+│       │   │   ├── smoothing.py
+│       │   │   └── utils.py
+│       │   ├── raspberrypi
+│       │   │   ├── __init__.py
+│       │   │   └── alsc.py
+│       │   ├── raspberrypi_alsc_only.py
+│       │   ├── requirements.txt
+│       │   └── rkisp1.py
+│       ├── update-kernel-headers.sh
+│       └── update-mojo.sh
+├── robot_description
+│   ├── CMakeLists.txt
+│   ├── config
+│   │   ├── arm_controller.yaml
+│   │   ├── controllers.yaml
+│   │   └── joint_state_broadcaster.yaml
+│   ├── include
+│   │   └── robot_description
+│   ├── launch
+│   │   ├── robot_state_publisher.launch.py
+│   │   ├── ros2_control.launch.py
+│   │   └── state_publisher.launch.py
+│   ├── package.xml
+│   ├── src
+│   └── urdf
+│       ├── robot.urdf.xacro
+│       └── robot.urdf.xacro.backup_before_joint_offsets
+├── robot_hardware
+│   ├── CMakeLists.txt
+│   ├── include
+│   │   └── robot_hardware
+│   │       └── arduino_system.hpp
+│   ├── package.xml
+│   ├── robot_hardware.xml
+│   └── src
+│       └── arduino_system.cpp
+├── robot_motion
+│   ├── launch
+│   │   ├── move_joints.launch.py
+│   │   ├── move_joints.launch.py.save
+│   │   ├── move_tcp.launch.py
+│   │   ├── move_tcp_auto.launch.py
+│   │   ├── move_tcp_relative.launch.py
+│   │   ├── tcp_jog.launch.py
+│   │   └── test_tcp_directions.launch.py
+│   ├── package.xml
+│   ├── resource
+│   │   └── robot_motion
+│   ├── robot_motion
+│   │   ├── __init__.py
+│   │   ├── ik_target_node.py
+│   │   ├── move_joints.py
+│   │   ├── move_tcp.py
+│   │   ├── move_tcp_auto.py
+│   │   ├── move_tcp_relative.py
+│   │   ├── preset_node.py
+│   │   ├── serial_joint_bridge.py
+│   │   ├── serial_trajectory_bridge.py
+│   │   ├── tcp_jog.py
+│   │   ├── tcp_jog_node.py
+│   │   ├── tcp_keyboard.py
+│   │   ├── test_tcp_directions.py
+│   │   ├── test_tcp_ik.py
+│   │   └── workspace_scan.py
+│   ├── setup.cfg
+│   ├── setup.py
+│   └── test
+│       ├── test_copyright.py
+│       ├── test_flake8.py
+│       └── test_pep257.py
+└── robot_moveit_config
+    ├── CMakeLists.txt
+    ├── config
+    │   ├── joint_limits.yaml
+    │   ├── kinematics.yaml
+    │   ├── marek_robot.srdf
+    │   ├── moveit_controllers.yaml
+    │   ├── ompl_planning.yaml
+    │   └── pilz_cartesian_limits.yaml
+    ├── include
+    │   └── robot_moveit_config
+    ├── launch
+    │   └── move_group.launch.py
+    ├── package.xml
+    └── src
+
+239 directories, 1761 files

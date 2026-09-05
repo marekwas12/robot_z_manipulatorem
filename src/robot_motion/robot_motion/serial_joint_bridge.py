@@ -28,7 +28,7 @@ SERIAL_BAUD = 115200
 # 200 * 8 * 10.4 = 16640 krokow / obrot jointa
 # =====================================================
 
-STEPS_PER_REV = 16640.0
+STEPS_PER_REV = 23755.0
 
 STEPS_PER_RAD = (
     STEPS_PER_REV /
