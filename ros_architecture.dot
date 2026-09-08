@@ -1,0 +1,287 @@
+digraph ROS2_Architecture {
+
+    graph [
+        rankdir=LR,
+        splines=ortho,
+        nodesep=0.6,
+        ranksep=1.0,
+        bgcolor="white",
+        pad=0.3
+    ];
+
+    node [
+        shape=box,
+        style="rounded,filled",
+        fontname="Arial",
+        fontsize=11,
+        margin="0.15,0.10"
+    ];
+
+    edge [
+        fontname="Arial",
+        fontsize=9,
+        color="#555555",
+        arrowsize=0.8
+    ];
+
+    // =========================
+    // KAMERY I WIZJA
+    // =========================
+
+    camera_left [
+        label="/camera_left/left_camera",
+        fillcolor="#DCEEFF"
+    ];
+
+    camera_right [
+        label="/camera_right/right_camera",
+        fillcolor="#DCEEFF"
+    ];
+
+    stereo_depth [
+        label="/stereo_depth",
+        fillcolor="#DCEEFF"
+    ];
+
+    ai_detector [
+        label="/ai_cube_detector",
+        fillcolor="#E8F5E9"
+    ];
+
+    aruco_detector [
+        label="/aruco_cube_detector",
+        fillcolor="#E8F5E9"
+    ];
+
+    // =========================
+    // LOGIKA MISJI
+    // =========================
+
+    cleanup [
+        label="/cleanup_mission_node",
+        fillcolor="#FFF3CD"
+    ];
+
+    trunk [
+        label="/trunk_loading_node",
+        fillcolor="#FFF3CD"
+    ];
+
+    cube_pick [
+        label="/cube_pick_node",
+        fillcolor="#FFF3CD"
+    ];
+
+    cube_place [
+        label="/cube_place_node",
+        fillcolor="#FFF3CD"
+    ];
+
+    // =========================
+    // STEROWANIE MANIPULATOREM
+    // =========================
+
+    cartesian [
+        label="/cartesian_controller",
+        fillcolor="#F3E5F5"
+    ];
+
+    preset [
+        label="/manipulator_preset_node",
+        fillcolor="#F3E5F5"
+    ];
+
+    serial [
+        label="/serial_trajectory_bridge",
+        fillcolor="#FCE4D6"
+    ];
+
+    // =========================
+    // APLIKACJA
+    // =========================
+
+    rosbridge [
+        label="/rosbridge_websocket",
+        fillcolor="#E0E0E0"
+    ];
+
+    android [
+        label="Aplikacja Android",
+        shape=box,
+        style="rounded,dashed",
+        fillcolor="#F5F5F5"
+    ];
+
+    // =========================
+    // POŁĄCZENIA KAMER
+    // =========================
+
+    camera_left -> stereo_depth [
+        label="/camera_left/.../image_raw"
+    ];
+
+    camera_right -> stereo_depth [
+        label="/camera_right/.../image_raw"
+    ];
+
+    // =========================
+    // STEREO -> DETEKCJA
+    // =========================
+
+    stereo_depth -> ai_detector [
+        label="/stereo/left_rectified\n/stereo/points"
+    ];
+
+    stereo_depth -> aruco_detector [
+        label="/stereo/left_rectified\n/stereo/points"
+    ];
+
+    // =========================
+    // DETEKCJA -> MISJA
+    // =========================
+
+    ai_detector -> cleanup [
+        label="/ai_cube/detected\n/ai_cube/position_camera_fast"
+    ];
+
+    aruco_detector -> cleanup [
+        label="/cube_aruco/detected\n/cube_aruco/id\n/cube_aruco/position_camera\n/cube_aruco/quality\n/cube_aruco/yaw_deg"
+    ];
+
+    stereo_depth -> cleanup [
+        label="/stereo/center_distance"
+    ];
+
+    // =========================
+    // MISJA -> PICK / PLACE
+    // =========================
+
+    cleanup -> trunk [
+        label="/trunk_loading/command"
+    ];
+
+    trunk -> cube_pick [
+        label="/cube_pick/command"
+    ];
+
+    trunk -> cube_place [
+        label="/cube_place/command"
+    ];
+
+    cube_pick -> trunk [
+        label="/cube_pick/status"
+    ];
+
+    cube_place -> trunk [
+        label="/cube_place/status"
+    ];
+
+    // =========================
+    // PICK -> MANIPULATOR
+    // =========================
+
+    cube_pick -> cartesian [
+        label="/manipulator/cartesian_target"
+    ];
+
+    // =========================
+    // KOMENDY MANIPULATORA
+    // =========================
+
+    cleanup -> serial [
+        label="/manipulator/command"
+    ];
+
+    cube_pick -> serial [
+        label="/manipulator/command"
+    ];
+
+    cube_place -> serial [
+        label="/manipulator/command"
+    ];
+
+    // =========================
+    // INFORMACJA O STANIE
+    // =========================
+
+    serial -> cube_pick [
+        label="/joint_states"
+    ];
+
+    serial -> cube_place [
+        label="/joint_states"
+    ];
+
+    serial -> cartesian [
+        label="/joint_states"
+    ];
+
+    serial -> preset [
+        label="/joint_states"
+    ];
+
+    // =========================
+    // STEROWANIE TRAJEKTORIĄ
+    // =========================
+
+    cartesian -> serial [
+        label="/arm_controller/follow_joint_trajectory",
+        style=dashed
+    ];
+
+    cube_pick -> serial [
+        label="/arm_controller/follow_joint_trajectory",
+        style=dashed,
+        constraint=false
+    ];
+
+    cube_place -> serial [
+        label="/arm_controller/follow_joint_trajectory",
+        style=dashed,
+        constraint=false
+    ];
+
+    preset -> serial [
+        label="/arm_controller/follow_joint_trajectory",
+        style=dashed,
+        constraint=false
+    ];
+
+    // =========================
+    // APLIKACJA
+    // =========================
+
+    android -> rosbridge [
+        label="WebSocket"
+    ];
+
+    rosbridge -> cleanup [
+        label="/cleanup_mission/command",
+        style=dashed
+    ];
+
+    rosbridge -> cube_pick [
+        label="/cube_pick/command",
+        style=dashed
+    ];
+
+    rosbridge -> cube_place [
+        label="/cube_place/command",
+        style=dashed
+    ];
+
+    rosbridge -> trunk [
+        label="/trunk_loading/command",
+        style=dashed
+    ];
+
+    rosbridge -> preset [
+        label="/manipulator/preset",
+        style=dashed
+    ];
+
+    rosbridge -> cartesian [
+        label="/manipulator/cartesian_jog\n/manipulator/cartesian_target",
+        style=dashed
+    ];
+}
